@@ -85,6 +85,22 @@ flowchart TD
   Assert --> Baseline
 ```
 
+### High-Level Flow
+
+```
+Worker starts
+  └─ Sandbox fixture (Tezbox) starts once per worker
+  └─ Accounts fixture funds fixed seeds
+
+Per test
+  └─ Wallet fixture launches Temple / Kukai / Umami
+  └─ DApp fixture opens taquito-test-dapp
+  └─ Scenario runs against WalletDriver interface
+  └─ On-chain assertions via Tezbox RPC
+  └─ Baseline comparison (scrubbed JSON)
+  └─ Wallet context torn down
+```
+
 ### Wallet Driver Interface
 
 Scenarios only talk to a common interface. Each wallet has its own driver that knows how to click through its confirmation UI.
@@ -118,10 +134,61 @@ projects: [
 3. For each test:
    - Wallet fixture starts the target wallet (persistent context for Temple, normal page for Kukai, Electron for Umami).
    - DApp fixture opens the test dApp pointed at the local network.
-   - Scenario calls the driver methods (connect, approve, etc.).
+   - Scenario runs the TZIP-10 / Taquito action (transfer, originate, call, batch, sign, etc.).
+   - Wallet driver confirms the operation in its UI.
    - Helper queries Tezbox RPC to confirm the operation was included and storage or balances match expectations.
    - Baseline helper compares the scrubbed result against the stored JSON (or updates it when `UPDATE_BASELINES=1`).
 4. Wallet context is closed. Next test gets a clean one.
+
+## Fixture Examples
+
+### Temple
+
+```ts
+// fixtures/wallets/temple.fixture.ts
+export const test = base.extend<{ wallet: TempleDriver }>({
+  wallet: async ({}, use) => {
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false, // or true in CI
+      args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
+    });
+    const driver = new TempleDriver(context);
+    await driver.ensureUnlocked();
+    await use(driver);
+    await context.close();
+  },
+});
+```
+
+### Kukai
+
+```ts
+// fixtures/wallets/kukai.fixture.ts
+export const test = base.extend<{ wallet: KukaiDriver }>({
+  wallet: async ({ page }, use) => {
+    await page.goto(kukaiUrl);
+    const driver = new KukaiDriver(page);
+    await driver.ensureUnlocked();
+    await use(driver);
+  },
+});
+```
+
+### Umami
+
+```ts
+// fixtures/wallets/umami.fixture.ts
+export const test = base.extend<{ wallet: UmamiDriver }>({
+  wallet: async ({}, use) => {
+    const electronApp = await _electron.launch({ args: [umamiMainPath] });
+    const window = await electronApp.firstWindow();
+    const driver = new UmamiDriver(window);
+    await driver.ensureUnlocked();
+    await use(driver);
+    await electronApp.close();
+  },
+});
+```
 
 ## Playwright Practices We Will Follow
 
@@ -137,6 +204,27 @@ From the current Playwright docs:
 - For Temple: `launchPersistentContext` with the extension loaded and a fixed user-data directory that already has the seed.
 - For Umami: `_electron.launch` + `firstWindow()` (Electron support is experimental but documented).
 - If Beacon or wallet pages use service workers and network events go missing, set `serviceWorkers: 'block'`.
+
+### Key Playwright APIs We Will Use
+
+- `test.extend()` and worker-scoped fixtures
+- `chromium.launchPersistentContext()` (Temple)
+- `_electron.launch()` and `electronApp.firstWindow()` (Umami)
+- `page.getByRole()`, `getByTestId()`, `getByLabel()` inside drivers
+- Web-first assertions (`toBeVisible`, `toHaveText`, etc.)
+- `request` fixture or a custom fixture for Tezbox RPC checks
+- Trace Viewer and UI Mode during development
+
+### Electron Challenges
+
+Umami is an Electron app. Playwright's Electron support is experimental. Common issues include:
+
+- Launch timeouts if the Node CLI inspect fuse is disabled
+- Native dialogs are not intercepted (they go straight to OS APIs)
+- Window management differs from browser contexts
+- Debugging is harder than for browser extensions or web pages
+
+We accept these trade-offs for now and keep Umami behind its own driver so the rest of the suite stays stable.
 
 ## Baseline Strategy
 
@@ -170,11 +258,11 @@ Additional concrete measures:
 - Prefer manual or controlled baking after each operation so block times and inclusion are predictable.
 - Pin Tezbox Docker image tags and wallet versions (or known-good commits) so CI does not drift.
 
-## Wallet-Specific Practical Notes
+## Wallet-Specific Strategies
 
 - Temple: load the unpacked extension via `launchPersistentContext`, use a pre-populated user-data directory with the seed already imported, and handle the extension popup for approvals.
 - Kukai: treat it as a normal web page. Pairing can be done via deep link or by filling the pairing UI. Timing races with Beacon are common; wait for concrete UI states.
-- Umami: launch with `_electron.launch`, get the window with `firstWindow()`, and drive the Electron UI. Confirmation dialogs differ from the browser wallets.
+- Umami: launch with `_electron.launch`, get the window with `firstWindow()`, and drive the Electron UI. Confirmation dialogs differ from the browser wallets. Electron support is experimental, so expect more flakiness and longer timeouts.
 
 These differences stay inside the drivers. Scenarios stay the same.
 
