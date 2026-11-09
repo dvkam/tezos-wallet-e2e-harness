@@ -1,18 +1,24 @@
-# Tezos Wallet E2E Harness — Proposal
+# Tezos Wallet E2E Harness: Proposal
 
-This document is a starting point for an automated E2E testing setup that runs Beacon/Taquito wallet flows against real wallets (Temple, Kukai, Umami) on a deterministic local chain.
+This document is a starting point for an automated E2E testing setup that runs Beacon and Taquito wallet flows against real wallets (Temple, Kukai, Umami) on a deterministic local chain.
 
-The goal is to reduce manual testing overhead while catching regressions in connect, permission, and operation signing flows.
+The goal is to reduce manual testing overhead while catching regressions in connect, permission, and operation signing flows. Beacon is the system under test. The wallets are the execution environments.
 
 ## Background
 
 Manual testing of Beacon flows against real wallets is slow and hard to keep consistent. The wallets that matter most are Temple (browser extension), Kukai (web), and Umami (desktop Electron). All are open source.
 
-Existing pieces we can reuse:
+### Why these components
 
-- `taquito-test-dapp-vue` (or similar) as the dApp under test
-- Tezbox or Flextesa for a local sandbox
-- Playwright for browser/Electron automation
+We checked recent activity before choosing them:
+
+- Temple: actively maintained, Chrome store updates through 2026
+- Kukai: recent commits and releases
+- Umami v2: Playwright already used in its own e2e tests, recent releases
+- taquito-test-dapp-vue: updated in 2026, minimal Beacon + Taquito surface
+- Tezbox: Docker-based, tracks recent Octez, easy to start
+
+Flextesa remains an option if we need finer control over baking, but Tezbox is simpler for the first version.
 
 Determinism is important. Fixed accounts, controlled chain state, and on-chain verification as the source of truth help keep runs stable.
 
@@ -113,7 +119,7 @@ projects: [
    - Wallet fixture starts the target wallet (persistent context for Temple, normal page for Kukai, Electron for Umami).
    - DApp fixture opens the test dApp pointed at the local network.
    - Scenario calls the driver methods (connect, approve, etc.).
-   - Helper queries Tezbox RPC to confirm the operation was included and storage/balances match expectations.
+   - Helper queries Tezbox RPC to confirm the operation was included and storage or balances match expectations.
    - Baseline helper compares the scrubbed result against the stored JSON (or updates it when `UPDATE_BASELINES=1`).
 4. Wallet context is closed. Next test gets a clean one.
 
@@ -122,15 +128,19 @@ projects: [
 From the current Playwright docs:
 
 - Prefer fixtures (`test.extend`) over heavy `beforeAll`/`afterAll` for setup and teardown. Worker-scoped fixtures are a good fit for the sandbox.
-- Use role, label, and test-id locators inside the drivers. Avoid long CSS/XPath chains.
+- Use role, label, and test-id locators inside the drivers. Avoid long CSS or XPath chains.
 - Prefer web-first assertions (`await expect(locator).toBeVisible()`) so Playwright waits and retries.
 - Keep tests isolated. Each test gets its own browser context.
-- Enable `trace: 'on-first-retry'` and use the Trace Viewer / UI Mode while developing.
+- Enable `trace: 'on-first-retry'` and use the Trace Viewer or UI Mode while developing.
 - Use projects to run the same scenarios against different wallets.
+- Prefer project dependencies for any global setup over the older `globalSetup` option.
 - For Temple: `launchPersistentContext` with the extension loaded and a fixed user-data directory that already has the seed.
 - For Umami: `_electron.launch` + `firstWindow()` (Electron support is experimental but documented).
+- If Beacon or wallet pages use service workers and network events go missing, set `serviceWorkers: 'block'`.
 
 ## Baseline Strategy
+
+On-chain results are the primary assertion. UI checks are secondary.
 
 After a successful flow we capture a scrubbed result:
 
@@ -139,7 +149,9 @@ After a successful flow we capture a scrubbed result:
 - Contract storage (if any)
 - Relevant UI status text
 
-Hashes, timestamps, and Beacon request IDs are stripped before comparison. The helper does a deep equality check against the file under `baselines/`.
+Hashes, timestamps, Beacon request IDs, and network IDs are stripped before comparison. The helper does a deep equality check against the file under `baselines/`.
+
+We store baselines per scenario. When the on-chain result is identical across wallets we can share the file; otherwise we keep wallet-specific copies.
 
 ## Determinism Levers
 
@@ -150,6 +162,21 @@ Hashes, timestamps, and Beacon request IDs are stripped before comparison. The h
 | Timing               | Explicit waits + on-chain inclusion checks    |
 | Beacon pairing       | Wait for specific UI states inside drivers    |
 | Locators             | Role / test-id preferred                      |
+| Non-deterministic fields | Scrub hashes, timestamps, Beacon IDs, network IDs |
+
+Additional concrete measures:
+
+- Use a fixed set of mnemonics (or key-of-name style accounts) so addresses stay the same across runs.
+- Prefer manual or controlled baking after each operation so block times and inclusion are predictable.
+- Pin Tezbox Docker image tags and wallet versions (or known-good commits) so CI does not drift.
+
+## Wallet-Specific Practical Notes
+
+- Temple: load the unpacked extension via `launchPersistentContext`, use a pre-populated user-data directory with the seed already imported, and handle the extension popup for approvals.
+- Kukai: treat it as a normal web page. Pairing can be done via deep link or by filling the pairing UI. Timing races with Beacon are common; wait for concrete UI states.
+- Umami: launch with `_electron.launch`, get the window with `firstWindow()`, and drive the Electron UI. Confirmation dialogs differ from the browser wallets.
+
+These differences stay inside the drivers. Scenarios stay the same.
 
 ## Suggested Starting Slice
 
@@ -162,8 +189,8 @@ Hashes, timestamps, and Beacon request IDs are stripped before comparison. The h
 ## Open Questions
 
 - Exact Tezbox vs Flextesa choice and how baking is controlled.
-- How to keep wallet extension/Electron versions pinned.
+- How to keep wallet extension and Electron versions pinned.
 - Whether we store baselines per wallet or share them when the on-chain result is identical.
-- How aggressively to update baselines in CI.
+- How aggressively to update baselines in CI (and who reviews the diffs).
 
-This document is intentionally short. The next concrete step is to add the Playwright config, the `WalletDriver` interface, a Temple fixture/driver stub, and one working scenario.
+This document is intentionally short. The next concrete step is to add the Playwright config, the `WalletDriver` interface, a Temple fixture and driver stub, and one working scenario.
