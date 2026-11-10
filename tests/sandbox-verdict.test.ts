@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { consoleOrigin } from '../e2e/sandbox-health.ts'
 import { sandboxVerdict } from '../scripts/sandbox-verdict.ts'
 
 test('retains a confirmed transfer alongside dApp and wallet health findings', () => {
@@ -41,4 +42,12 @@ test('keeps a cancellation visible without counting it as a health failure', () 
   }, 'network')
   assert.equal(result.status, 'workflow-passed')
   assert.deepEqual(result.health?.wallet.canceledRequests, canceledRequests)
+})
+
+test('attributes Temple content-script errors to the wallet on a dApp page', () => {
+  const wallet = 'chrome-extension://' + 'a'.repeat(32)
+  const dapp = 'http://127.0.0.1:19000'
+  assert.equal(consoleOrigin(wallet, { page: dapp, source: wallet + '/scripts/main.js' }), wallet)
+  assert.equal(consoleOrigin(wallet, { page: dapp, source: 'https://example.org/script.js' }), dapp)
+  assert.equal(consoleOrigin(wallet, { worker: wallet + '/worker.js', source: '' }), wallet)
 })

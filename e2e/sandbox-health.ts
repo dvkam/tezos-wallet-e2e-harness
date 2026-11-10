@@ -25,6 +25,15 @@ function originOf(value: string | undefined): string | undefined {
   return url.protocol === 'chrome-extension:' ? 'chrome-extension://' + url.host : url.origin
 }
 
+export function consoleOrigin(extensionOrigin: string, urls: {
+  worker?: string
+  page?: string
+  source: string
+}) {
+  const source = originOf(urls.source)
+  return originOf(urls.worker) ?? (source === extensionOrigin ? source : originOf(urls.page) ?? source)
+}
+
 export function observeSandboxHealth(context: BrowserContext, appOrigin: string, extensionOrigin: string) {
   const dapp: Finding[] = []
   const wallet: Finding[] = []
@@ -41,9 +50,12 @@ export function observeSandboxHealth(context: BrowserContext, appOrigin: string,
 
   context.on('console', message => {
     if (message.type() !== 'error') return
-    record(originOf(message.worker()?.url() ?? message.page()?.url()) ?? originOf(message.location().url), {
-      kind: 'console-error', detail: message.text()
+    const origin = consoleOrigin(extensionOrigin, {
+      worker: message.worker()?.url(),
+      page: message.page()?.url(),
+      source: message.location().url
     })
+    record(origin, { kind: 'console-error', detail: message.text() })
   })
   context.on('weberror', error => {
     record(originOf(error.page()?.url()), { kind: 'page-error', detail: error.error().message })
