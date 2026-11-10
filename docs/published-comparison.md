@@ -16,7 +16,7 @@ The comparison changes both Beacon and Taquito. It establishes the behavior of t
 
 ## Setup
 
-Use a Linux or WSL checkout with Node `24.22.1`, npm, Python 3, Xvfb and Chromium's system libraries. Start Docker in that environment for the network and transfer commands. The README lists the pinned Tezbox image.
+Use a Linux or WSL checkout with Node `24.22.1`, npm, Python 3, Xvfb and Chromium's system libraries. Start Docker in that environment for the network and transfer commands. The [verification guide](verification.md#run-the-checks) lists the pinned Tezbox image.
 
 ```sh
 npm ci --ignore-scripts
