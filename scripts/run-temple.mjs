@@ -2,7 +2,7 @@ import { execFile, fork, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { promisify } from 'node:util'
-import { mkdir, mkdtemp, copyFile, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, copyFile, readFile, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 
 const mode = process.argv[2] ?? 'lifecycle'
@@ -129,6 +129,21 @@ try {
     workflowError = error
     report.workflowError = String(error)
   }
+  if (mode !== 'lifecycle' && !interrupted) {
+    try {
+      const artifacts = path.join(directory, 'artifacts')
+      const entries = await readdir(artifacts, { withFileTypes: true })
+      const candidates = entries.filter(entry => entry.isDirectory() && entry.name.startsWith('temple-sandbox-'))
+      if (candidates.length !== 1) throw new Error('Expected one sandbox evidence directory')
+      const evidence = JSON.parse(await readFile(path.join(artifacts, candidates[0].name, 'sandbox.json'), 'utf8'))
+      const { sandboxVerdict } = await import('./sandbox-verdict.ts')
+      report.sandbox = sandboxVerdict(evidence, mode)
+      if (report.sandbox.workflow === 'failed' && !workflowError) throw new Error('Sandbox workflow failed')
+    } catch (error) {
+      report.sandboxEvidenceError = String(error)
+      if (!workflowError) workflowError = error
+    }
+  }
   if (!interrupted) {
     await run('wallet artifact after test', 'python3', ['scripts/temple_artifact.py'])
   }
@@ -137,7 +152,11 @@ try {
     throw workflowError
   }
   report.stage = mode
-  report.status = 'workflow-passed'
+  report.status = report.sandbox?.status ?? 'workflow-passed'
+  if (report.status !== 'workflow-passed') {
+    console.error(report.status + '. See the separate workflow and health results in ' + directory)
+    process.exitCode = 1
+  }
 } catch (error) {
   report.status = interrupted ? 'interrupted' : 'failed'
   report.error = String(error)

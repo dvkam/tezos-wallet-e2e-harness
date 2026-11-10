@@ -1,15 +1,11 @@
-import { test, expect, type BrowserContext, type Request } from '@playwright/test'
+import { test, expect, type BrowserContext } from '@playwright/test'
 import { rm, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
-import { fixture, launchTemple, onboard, templeProfile } from './temple-browser'
+import { captureFailure, fixture, launchTemple, onboard, templeProfile, traceStep } from './temple-browser'
 import { startTezbox } from './tezbox'
 import { sandboxChain, sandboxRpc } from '../src/sandbox-chain'
 
-function requestOrigin(request: Request) {
-  const initiator = request.serviceWorker()?.url() ?? request.frame().url()
-  const url = new URL(initiator)
-  return url.protocol === 'chrome-extension:' ? 'chrome-extension://' + url.host : url.origin
-}
+import { observeSandboxHealth, requestOrigin } from './sandbox-health'
 
 const appOrigin = z.string().regex(/^http:\/\/127\.0\.0\.1:\d+$/).parse(process.env.TEMPLE_APP_ORIGIN)
 const mode = process.env.TEMPLE_SANDBOX_MODE
@@ -31,6 +27,8 @@ test(mode === 'network' ? 'Temple approves the custom Tezbox network' : 'Temple 
   let context: BrowserContext | undefined
   let tracing = false
   let browserVersion: string | undefined
+  let workflowPassed = false
+  let health: ReturnType<typeof observeSandboxHealth> | undefined
   let confirmedTransfer: object | undefined
   const observed: { client: 'temple' | 'dapp'; origin: string; chain: unknown }[] = []
   try {
@@ -45,6 +43,7 @@ test(mode === 'network' ? 'Temple approves the custom Tezbox network' : 'Temple 
     const extensionId = new URL(worker.url()).hostname
     const endpoints = sandboxRpc(tezbox.origin)
     const extensionOrigin = 'chrome-extension://' + extensionId
+    health = observeSandboxHealth(browser, appOrigin, extensionOrigin)
     const app = await browser.newPage()
     function observeChain(client: 'temple' | 'dapp', origin: string) {
       return browser.waitForEvent('response', {
@@ -64,7 +63,7 @@ test(mode === 'network' ? 'Temple approves the custom Tezbox network' : 'Temple 
     await Promise.all([
       observeChain('dapp', appOrigin),
       observeChain('temple', extensionOrigin),
-      test.step('Approve custom permissions in Temple', async () => {
+      traceStep(browser, 'Approve custom permissions in Temple', async () => {
         const [confirmation] = await Promise.all([
           browser.waitForEvent('page', { predicate: page => page.url().startsWith(extensionOrigin + '/confirm.html') }),
           (async () => {
@@ -91,7 +90,7 @@ test(mode === 'network' ? 'Temple approves the custom Tezbox network' : 'Temple 
         })
       })
     ])
-    await test.step('Verify both clients reached the pinned chain before any injection', async () => {
+    await traceStep(browser, 'Verify both clients reached the pinned chain before any injection', async () => {
       await expect.poll(() => observed).toEqual(expect.arrayContaining([
         { client: 'dapp', origin: appOrigin, chain: sandboxChain.id },
         { client: 'temple', origin: extensionOrigin, chain: sandboxChain.id }
@@ -102,12 +101,12 @@ test(mode === 'network' ? 'Temple approves the custom Tezbox network' : 'Temple 
       expect(tezbox.calls.filter(call => call.path === '/injection/operation')).toEqual([])
     })
     if (mode === 'transfer') {
-      await test.step('Fund the test account on the owned sandbox', async () => {
+      await traceStep(browser, 'Fund the test account on the owned sandbox', async () => {
         await tezbox.fund(fixture.address)
         await expect.poll(() => tezbox.rpc('/chains/main/blocks/head/context/contracts/' + fixture.address + '/balance'),
           { timeout: 25_000 }).toBe('5000000')
       })
-      await test.step('Approve one Taquito transfer and verify the applied receipt', async () => {
+      await traceStep(browser, 'Approve one Taquito transfer and verify the applied receipt', async () => {
         const balancePath = '/chains/main/blocks/head/context/contracts/' + sandboxChain.recipient + '/balance'
         const balance = async () => BigInt(z.string().regex(/^\d+$/).parse(await tezbox.rpc(balancePath)))
         const before = await balance()
@@ -176,18 +175,17 @@ test(mode === 'network' ? 'Temple approves the custom Tezbox network' : 'Temple 
         confirmedTransfer = { hash, level: nextLevel, receipt, recipientBefore: String(before), recipientAfter: String(after) }
       })
     }
+    workflowPassed = true
   } catch (error) {
-    if (tracing && context) {
-      const pages = context.pages().filter(page => page.url().startsWith(appOrigin + '/') ||
-        (page.url().startsWith('chrome-extension:') && page.url().includes('/confirm.html')))
-      await Promise.allSettled(pages.map((page, index) =>
-        page.screenshot({ path: info.outputPath('failure-' + index + '.png'), timeout: 2000 })))
-    }
+    if (context && tracing) await captureFailure(context, appOrigin, info)
     throw error
   } finally {
     try {
       const chain = sandbox && { image: sandbox.image, id: sandboxChain.id, genesis: sandboxChain.genesis }
       await writeFile(info.outputPath('sandbox.json'), JSON.stringify({
+        workflow: workflowPassed ? 'passed' : 'failed',
+        transfer: mode === 'network' ? 'not-run' : confirmedTransfer ? 'passed' : 'failed',
+        health: health?.() ?? null,
         browserVersion, chain, observed, rpc: sandbox?.calls, confirmedTransfer
       }, null, 2))
       if (context && tracing) await context.tracing.stop({ path: info.outputPath('trace.zip') })
