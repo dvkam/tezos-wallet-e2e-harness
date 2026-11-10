@@ -1,44 +1,17 @@
 import { parseConsumerConfig } from './config'
 import { describeError } from './errors'
 import { TezosToolkit } from '@taquito/taquito'
-import { BeaconWallet, BeaconEvent } from '@taquito/beacon-wallet'
-import { NetworkType, SigningType, ExtensionMessageTarget } from '@ecadlabs/beacon-types'
+import { createTempleWallet } from './temple-wallet'
+import { NetworkType, SigningType } from '@ecadlabs/beacon-types'
 
 const config = parseConsumerConfig(new URLSearchParams(location.search))
-const customPicker = config.picker === 'custom'
-const extensionId = config.picker === 'custom' ? config.extensionId : undefined
 const appName = 'Temple stable baseline'
-const connect = document.querySelector('#connect-temple')
 const result = document.querySelector('#result')
-if (!(connect instanceof HTMLButtonElement) || !(result instanceof HTMLElement)) {
+if (!(result instanceof HTMLElement)) {
   throw new Error('Consumer controls are missing')
 }
 
-let pairingPayload: string | undefined
-connect.hidden = !customPicker
-connect.addEventListener('click', () => {
-  if (!pairingPayload || !extensionId) throw new Error('Pairing is not ready')
-  window.postMessage({
-    target: ExtensionMessageTarget.EXTENSION,
-    payload: pairingPayload,
-    targetId: extensionId
-  }, location.origin)
-  connect.disabled = true
-  pairingPayload = undefined
-})
-const wallet = new BeaconWallet({
-  name: appName,
-  enableMetrics: false,
-  network: { type: NetworkType.MAINNET },
-  eventHandlers: customPicker ? {
-    [BeaconEvent.PAIR_INIT]: {
-      handler: async data => {
-        pairingPayload = await data.postmessagePeerInfo
-        connect.disabled = false
-      }
-    }
-  } : undefined
-})
+const wallet = createTempleWallet(appName, { type: NetworkType.MAINNET }, config)
 const tezos = new TezosToolkit('https://prod.tcinfra.net/rpc/mainnet')
 tezos.setWalletProvider(wallet)
 const challenge = '05010000003754657a6f73205369676e6564204d6573736167653a2054656d706c6520737461626c6520626173656c696e652074657374206f6e6c792e'
