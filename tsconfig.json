@@ -19,6 +19,8 @@
     "src",
     "e2e",
     "playwright.config.ts",
+    "playwright.sandbox.config.ts",
+    "vite.config.ts",
     "lib",
     "tests"
   ]

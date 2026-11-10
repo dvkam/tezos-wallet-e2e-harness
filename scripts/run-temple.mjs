@@ -1,11 +1,16 @@
-import { fork, spawn } from 'node:child_process'
+import { execFile, fork, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
-import { mkdir, mkdtemp, copyFile, readFile, rm } from 'node:fs/promises'
+import { promisify } from 'node:util'
+import { mkdir, mkdtemp, copyFile, readFile, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 
-const mode = 'lifecycle'
-const repeats = 3
-const playwrightArgs = ['test']
+const mode = process.argv[2] ?? 'lifecycle'
+if (!['lifecycle', 'network', 'transfer'].includes(mode) || process.argv.length > 3) throw new Error('Expected lifecycle, network, or transfer')
+const sandboxRun = mode === 'lifecycle' ? undefined : randomUUID()
+let sandboxAttempted = false
+const repeats = mode === 'lifecycle' ? 3 : 1
+const playwrightArgs = mode === 'lifecycle' ? ['test'] : ['test', '--config=playwright.sandbox.config.ts']
 
 await mkdir('reports', { recursive: true })
 const directory = await mkdtemp(path.resolve('reports', 'temple-' + mode + '-'))
@@ -79,17 +84,19 @@ async function run(stage, command, args) {
   if (interrupted) throw new Error('Run interrupted')
   report.stage = stage
   await new Promise((resolve, reject) => {
+    const sandboxEnv = sandboxRun ? { TEMPLE_SANDBOX_RUN_ID: sandboxRun } : {}
     const workflowEnv = {
       TEMPLE_REPORT_DIR: directory,
       TEMPLE_PROFILE_ROOT: profiles,
       TEMPLE_REPEATS: String(repeats),
       TEMPLE_PICKER: 'custom',
+      TEMPLE_SANDBOX_MODE: mode,
       TEMPLE_APP_ORIGIN: report.appOrigin ?? ''
     }
     child = spawn(command, args, {
       detached: true,
       stdio: 'inherit',
-      env: { ...process.env, ...workflowEnv }
+      env: { ...process.env, ...sandboxEnv, ...workflowEnv }
     })
     child.once('error', reject)
     child.once('close', (code, signal) => {
@@ -111,6 +118,7 @@ try {
   console.log('Preview: ' + report.appOrigin)
   let workflowError
   try {
+    sandboxAttempted = sandboxRun !== undefined
     await run(mode, 'node_modules/.bin/playwright', playwrightArgs)
     const { stats } = JSON.parse(await readFile(path.join(directory, 'playwright.json'), 'utf8'))
     report.stats = stats
@@ -121,6 +129,21 @@ try {
     workflowError = error
     report.workflowError = String(error)
   }
+  if (mode !== 'lifecycle' && !interrupted) {
+    try {
+      const artifacts = path.join(directory, 'artifacts')
+      const entries = await readdir(artifacts, { withFileTypes: true })
+      const candidates = entries.filter(entry => entry.isDirectory() && entry.name.startsWith('temple-sandbox-'))
+      if (candidates.length !== 1) throw new Error('Expected one sandbox evidence directory')
+      const evidence = JSON.parse(await readFile(path.join(artifacts, candidates[0].name, 'sandbox.json'), 'utf8'))
+      const { sandboxVerdict } = await import('./sandbox-verdict.ts')
+      report.sandbox = sandboxVerdict(evidence, mode)
+      if (report.sandbox.workflow === 'failed' && !workflowError) throw new Error('Sandbox workflow failed')
+    } catch (error) {
+      report.sandboxEvidenceError = String(error)
+      if (!workflowError) workflowError = error
+    }
+  }
   if (!interrupted) {
     await run('wallet artifact after test', 'python3', ['scripts/temple_artifact.py'])
   }
@@ -129,7 +152,11 @@ try {
     throw workflowError
   }
   report.stage = mode
-  report.status = 'workflow-passed'
+  report.status = report.sandbox?.status ?? 'workflow-passed'
+  if (report.status !== 'workflow-passed') {
+    console.error(report.status + '. See the separate workflow and health results in ' + directory)
+    process.exitCode = 1
+  }
 } catch (error) {
   report.status = interrupted ? 'interrupted' : 'failed'
   report.error = String(error)
@@ -143,6 +170,19 @@ try {
     console.error('Preview cleanup failed: ' + report.previewCleanupError)
     report.status = 'failed'
     process.exitCode = 1
+  }
+  if (sandboxAttempted && sandboxRun) {
+    try {
+      const docker = (...args) => promisify(execFile)('docker', args, { timeout: 10_000 })
+      const { stdout } = await docker('ps', '-aq', '--filter', 'label=tezos-wallet-e2e.run=' + sandboxRun)
+      const ids = stdout.trim().split(/\s+/).filter(Boolean)
+      if (ids.length) await docker('rm', '-f', ...ids)
+    } catch (error) {
+      report.cleanupError = String(error)
+      console.error('Sandbox cleanup failed: ' + report.cleanupError)
+      report.status = 'failed'
+      process.exitCode = 1
+    }
   }
   try {
     await rm(profiles, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 })
