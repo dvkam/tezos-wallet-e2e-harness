@@ -1,0 +1,10 @@
+{
+  "wallet": {
+    "name": "Temple",
+    "version": "2.0.34",
+    "url": "https://github.com/madfish-solutions/templewallet-extension/releases/download/2.0.34/chrome.zip",
+    "sha256": "6ec9e871d41cefc3458c9b669fd32232450f8766ea71fd77f57fd0505ae1fdd4",
+    "archive": ".artifacts/temple/chrome.zip",
+    "directory": ".artifacts/temple/2.0.34"
+  }
+}
