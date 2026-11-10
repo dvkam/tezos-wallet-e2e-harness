@@ -145,7 +145,7 @@ try {
     process.exitCode = 1
   }
   try {
-    await rm(profiles, { recursive: true, force: true })
+    await rm(profiles, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 })
   } catch (error) {
     report.profileCleanupError = String(error)
     console.error('Profile cleanup failed: ' + report.profileCleanupError)
