@@ -4,8 +4,13 @@ const evidence = z.object({
   workflow: z.enum(['passed', 'failed']),
   transfer: z.enum(['passed', 'failed', 'not-run']),
   health: z.object({
-    dapp: z.object({ status: z.enum(['clean', 'failed']), findings: z.array(z.unknown()) }),
-    wallet: z.object({ status: z.enum(['clean', 'degraded']), findings: z.array(z.unknown()) })
+    scope: z.literal('post-onboarding'),
+    dapp: z.object({
+      status: z.enum(['clean', 'failed']), findings: z.array(z.unknown()), canceledRequests: z.array(z.unknown())
+    }),
+    wallet: z.object({
+      status: z.enum(['clean', 'degraded']), findings: z.array(z.unknown()), canceledRequests: z.array(z.unknown())
+    })
   }).nullable()
 })
 

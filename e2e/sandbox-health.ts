@@ -1,7 +1,7 @@
 import type { BrowserContext, Request } from '@playwright/test'
 
 type Finding = {
-  kind: 'console-error' | 'page-error' | 'http-error' | 'request-failed'
+  kind: 'console-error' | 'page-error' | 'http-error' | 'request-failed' | 'request-canceled'
   detail: string
   endpoint?: string
 }
@@ -57,12 +57,23 @@ export function observeSandboxHealth(context: BrowserContext, appOrigin: string,
   })
   context.on('requestfailed', request => {
     const detail = request.failure()?.errorText
-    if (!detail || detail === 'net::ERR_ABORTED') return
-    record(requestOrigin(request), { kind: 'request-failed', detail, endpoint: endpoint(request) })
+    if (!detail) return
+    record(requestOrigin(request), {
+      kind: detail === 'net::ERR_ABORTED' ? 'request-canceled' : 'request-failed',
+      detail,
+      endpoint: endpoint(request)
+    })
   })
 
+  function summarize(events: Finding[], failure: 'failed' | 'degraded') {
+    const findings = events.filter(event => event.kind !== 'request-canceled')
+    const canceledRequests = events.filter(event => event.kind === 'request-canceled')
+    return { status: findings.length ? failure : 'clean', findings, canceledRequests }
+  }
+
   return () => ({
-    dapp: { status: dapp.length ? 'failed' : 'clean', findings: [...dapp] },
-    wallet: { status: wallet.length ? 'degraded' : 'clean', findings: [...wallet] }
+    scope: 'post-onboarding',
+    dapp: summarize(dapp, 'failed'),
+    wallet: summarize(wallet, 'degraded')
   })
 }

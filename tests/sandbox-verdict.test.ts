@@ -5,13 +5,13 @@ import { sandboxVerdict } from '../scripts/sandbox-verdict.ts'
 test('retains a confirmed transfer alongside dApp and wallet health findings', () => {
   const transfer = {
     workflow: 'passed', transfer: 'passed',
-    health: { dapp: { status: 'clean', findings: [] }, wallet: { status: 'degraded', findings: [{ detail: '429' }] } }
+    health: { scope: 'post-onboarding', dapp: { status: 'clean', findings: [], canceledRequests: [] }, wallet: { status: 'degraded', findings: [{ detail: '429' }], canceledRequests: [] } }
   }
   const result = sandboxVerdict(transfer, 'transfer')
   assert.equal(result.status, 'workflow-passed-with-wallet-findings')
   assert.equal(result.transfer, 'passed')
   assert.deepEqual(result.health, transfer.health)
-  const withDappError = { ...transfer, health: { ...transfer.health, dapp: { status: 'failed', findings: ['error'] } } }
+  const withDappError = { ...transfer, health: { ...transfer.health, dapp: { status: 'failed', findings: ['error'], canceledRequests: [] } } }
   assert.equal(sandboxVerdict(withDappError, 'transfer').status, 'workflow-passed-with-dapp-errors')
 })
 
@@ -25,6 +25,20 @@ test('requires health evidence and the requested operation outcome for a workflo
 test('cannot report clean health alongside recorded errors', () => {
   assert.throws(() => sandboxVerdict({
     workflow: 'passed', transfer: 'not-run',
-    health: { dapp: { status: 'clean', findings: [{ detail: 'error' }] }, wallet: { status: 'clean', findings: [] } }
+    health: { scope: 'post-onboarding', dapp: { status: 'clean', findings: [{ detail: 'error' }], canceledRequests: [] }, wallet: { status: 'clean', findings: [], canceledRequests: [] } }
   }, 'network'), /status disagrees/)
+})
+
+test('keeps a cancellation visible without counting it as a health failure', () => {
+  const canceledRequests = [{ detail: 'net::ERR_ABORTED' }]
+  const result = sandboxVerdict({
+    workflow: 'passed', transfer: 'not-run',
+    health: {
+      scope: 'post-onboarding',
+      dapp: { status: 'clean', findings: [], canceledRequests: [] },
+      wallet: { status: 'clean', findings: [], canceledRequests }
+    }
+  }, 'network')
+  assert.equal(result.status, 'workflow-passed')
+  assert.deepEqual(result.health?.wallet.canceledRequests, canceledRequests)
 })
