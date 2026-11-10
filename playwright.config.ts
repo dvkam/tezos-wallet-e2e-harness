@@ -18,7 +18,7 @@ export default defineConfig({
   globalTimeout: 600_000,
   outputDir: path.join(reportDirectory, 'artifacts'),
   reporter: [['list'], ['json', { outputFile: path.join(reportDirectory, 'playwright.json') }]],
-  webServer: {
+  webServer: process.env.TEMPLE_APP_ORIGIN ? undefined : {
     command: 'npm run preview -- --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false

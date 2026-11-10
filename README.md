@@ -19,6 +19,6 @@ The published Beacon dependency in this lockfile hangs at disconnect after resto
 
 Run one invocation at a time per checkout. The install and build share local files.
 
-Each invocation prints its directory under `reports/`. It contains the tested lockfile, Playwright JSON, measurements, and post-onboarding traces. Open a trace with `npx playwright show-trace path/to/trace.zip`.
+The runner closes its preview server and removes its browser profiles on exit. Each invocation prints its directory under `reports/`. It contains the tested lockfile, Playwright JSON, measurements, and post-onboarding traces with named steps. Failed runs also save PNGs of the dApp and any open wallet confirmation after onboarding. Open a trace with `npx playwright show-trace path/to/trace.zip`.
 
 Run `npm test` for the fixture, signature, and artifact checks. Run `npm run build` for TypeScript and the dApp build.

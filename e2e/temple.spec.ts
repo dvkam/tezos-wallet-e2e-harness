@@ -1,46 +1,18 @@
-import { test, expect, chromium, type BrowserContext, type Page } from '@playwright/test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { test, expect, type BrowserContext } from '@playwright/test'
+import { rm, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { deriveAddress, verifySignature } from '../lib/oracle.ts'
 
-const fixture = z.object({
-  mnemonic: z.string(), derivationPath: z.string(), publicKey: z.string(),
-  address: z.string(), payload: z.string()
-}).parse(JSON.parse(await readFile('fixtures/account.json', 'utf8')))
+import { captureFailure, fixture, launchTemple, onboard, templeProfile, traceStep } from './temple-browser'
 const completion = z.object({
   operation: z.string(), sequence: z.number(), status: z.enum(['pending', 'passed', 'rejected']),
   value: z.unknown().optional(), error: z.object({name: z.string(), message: z.string(), code:z.string().optional()}).optional()
 })
 const account = {address: fixture.address, publicKey: fixture.publicKey, network:'mainnet'}
 
-async function onboard(context: BrowserContext): Promise<Page> {
-  await expect.poll(() => context.pages().some(p => p.url().startsWith('chrome-extension:'))).toBe(true)
-  const page = context.pages().find(p => p.url().startsWith('chrome-extension:'))
-  if (!page) throw new Error('Temple did not open onboarding')
-  await page.getByTestId('Welcome/Import Existing Wallet button').click()
-  const inputs = page.getByTestId('Import Seed Form/Word Input')
-  await expect(inputs).toHaveCount(12)
-  for (const [index, word] of fixture.mnemonic.split(' ').entries()) await inputs.nth(index).fill(word)
-  await page.getByTestId('Import Seed Form/Next Button').click()
-  const password = 'Temple-Test-1!' + randomBytes(12).toString('hex')
-  await page.getByTestId('Register Form/Password Field').fill(password)
-  await page.getByTestId('Register Form/Repeat Password Field').fill(password)
-  for (const id of ['Register Form/Analytics Check Box', 'Register Form/Get Rewards Check Box']) {
-    const checkbox = page.getByTestId(id)
-    if (await checkbox.isVisible()) await checkbox.click()
-  }
-  await page.getByTestId('Register Form/Import Button').click()
-  await expect(page.getByTestId('Register Form/Password Field')).toBeHidden({timeout:30_000})
-  const newsletter = page.getByTestId('Newsletter Modal/Close Button')
-  if (await newsletter.isVisible()) await newsletter.click()
-  return page
-}
-
 test('Temple stable permission, signing and disconnect', async ({}, info) => {
-  const profile = await mkdtemp(path.join(tmpdir(), 'temple-baseline-'))
+  const appOrigin = process.env.TEMPLE_APP_ORIGIN || 'http://127.0.0.1:4173'
+  const profile = await templeProfile()
   let context: BrowserContext | undefined
   let tracing = false
   const measurements: Record<string, unknown> = {picker:process.env.TEMPLE_PICKER ?? 'custom', steps:[]}
@@ -50,11 +22,7 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
   const endpoints = new Set<string>()
   const failedRequests: {url:string; error:string | null}[] = []
   try {
-    context = await chromium.launchPersistentContext(profile, {
-      channel:'chromium', headless:false,
-      args:['--disable-extensions-except=' + path.resolve('.artifacts/temple/2.0.34'), '--load-extension=' + path.resolve('.artifacts/temple/2.0.34')]
-    })
-    context.setDefaultTimeout(20_000)
+    context = await launchTemple(profile)
     measurements.browserVersion = context.browser()?.version()
     const runningContext = context
     await test.step('Import the dedicated public test account through Temple UI', async () => { await onboard(runningContext) })
@@ -78,7 +46,7 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
     const extensionId = new URL(worker.url()).hostname
     measurements.extensionId = extensionId
     const custom = process.env.TEMPLE_PICKER !== 'default'
-    await app.goto('http://127.0.0.1:4173/' + (custom ? '?picker=custom&extensionId=' + extensionId : ''))
+    await app.goto(appOrigin + '/' + (custom ? '?picker=custom&extensionId=' + extensionId : ''))
     await expect(app.locator('#result')).toHaveAttribute('data-ready','true')
     let sequence = 0
     async function completed(operation:string, status:'passed'|'rejected') {
@@ -114,18 +82,18 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
       await Promise.all([confirmation.waitForEvent('close'), confirmation.getByTestId(id).click()])
       return completed(action,approve ? 'passed':'rejected')
     }
-    await test.step('Reject permission and leave no active account', async () => {
+    await traceStep(runningContext, 'Reject permission and leave no active account', async () => {
       await actWithConfirmation('permission',false,true)
       await app.locator('#account').click()
       expect((await completed('account','passed')).value).toBeNull()
     })
     steps.push('permission rejected; account remains absent')
-    await test.step('Recover with approved permission and exact expected identity', async () => {
+    await traceStep(runningContext, 'Recover with approved permission and exact expected identity', async () => {
       expect((await actWithConfirmation('permission',true,true)).value).toEqual(account)
       expect(deriveAddress(fixture.publicKey)).toBe(fixture.address)
     })
     steps.push('permission recovery; exact independent identity')
-    await test.step('Prove the authorized account persists before testing cleanup', async () => {
+    await traceStep(runningContext, 'Prove the authorized account persists before testing cleanup', async () => {
       await app.reload()
       await expect(app.locator('#result')).toHaveAttribute('data-ready','true')
       sequence = 0
@@ -133,7 +101,7 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
       expect((await completed('account','passed')).value).toEqual(account)
     })
     steps.push('authorized account survives reload')
-    await test.step('Approve signing and independently verify the exact challenge', async () => {
+    await traceStep(runningContext, 'Approve signing and independently verify the exact challenge', async () => {
       const result = await actWithConfirmation('sign',true)
       const signed = z.object({requestedPayload:z.string(), response:z.object({signature:z.string(),signingType:z.unknown().optional()})}).parse(result.value)
       expect(signed.requestedPayload).toBe(fixture.payload)
@@ -143,13 +111,13 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
       measurements.signature = signed.response.signature
     })
     steps.push('signature verified; changed-payload negative control rejected')
-    await test.step('Reject signing and preserve the authorized account', async () => {
+    await traceStep(runningContext, 'Reject signing and preserve the authorized account', async () => {
       await actWithConfirmation('sign',false)
       await app.locator('#account').click()
       expect((await completed('account','passed')).value).toEqual(account)
     })
     steps.push('signing rejected; account preserved')
-    await test.step('Disconnect and prove the account stays absent after reload', async () => {
+    await traceStep(runningContext, 'Disconnect and prove the account stays absent after reload', async () => {
       await app.locator('#disconnect').click()
       expect((await completed('disconnect','passed')).value).toBeNull()
       await app.reload()
@@ -162,6 +130,9 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
     expect(pageErrors).toEqual([])
     expect(consoleErrors).toEqual([])
     await app.screenshot({path:info.outputPath('consumer.png')})
+  } catch (error) {
+    if (context && tracing) await captureFailure(context, appOrigin, info)
+    throw error
   } finally {
     measurements.steps = steps
     measurements.pageErrors = pageErrors
