@@ -9,9 +9,12 @@
     "wallet:acquire": "python3 scripts/temple_artifact.py --acquire",
     "wallet:verify": "python3 scripts/temple_artifact.py",
     "test": "node --test tests/*.test.ts && python3 -m unittest discover -s scripts -p test_temple_artifact.py",
-    "temple:lifecycle": "node scripts/run-temple.mjs",
+    "temple:lifecycle": "node scripts/run-temple.mjs lifecycle",
     "temple:network": "node scripts/run-temple.mjs network",
-    "temple:transfer": "node scripts/run-temple.mjs transfer"
+    "temple:transfer": "node scripts/run-temple.mjs transfer",
+    "consumer:check": "node scripts/run-temple.mjs check",
+    "verify:publication": "node formal/verify-publication.ts",
+    "verify:runner": "node scripts/verify-runner.mjs"
   },
   "dependencies": {
     "@ecadlabs/beacon-dapp": "4.8.4-ecad",

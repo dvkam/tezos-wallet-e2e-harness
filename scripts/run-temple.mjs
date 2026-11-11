@@ -1,13 +1,18 @@
 import { execFile, fork, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, renameSync } from 'node:fs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import os from 'node:os'
+import { parseRunArgs, prepareWorkspace, sha256 } from './consumer-workspace.mjs'
 import { promisify } from 'node:util'
-import { mkdir, mkdtemp, copyFile, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 
-const mode = process.argv[2] ?? 'lifecycle'
-if (!['lifecycle', 'network', 'transfer'].includes(mode) || process.argv.length > 3) throw new Error('Expected lifecycle, network, or transfer')
-const sandboxRun = mode === 'lifecycle' ? undefined : randomUUID()
+const sourceRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
+process.chdir(sourceRoot)
+const { mode, lane } = parseRunArgs(process.argv.slice(2))
+const sandboxRun = mode === 'network' || mode === 'transfer' ? randomUUID() : undefined
+let workspace
 let sandboxAttempted = false
 const repeats = mode === 'lifecycle' ? 3 : 1
 const playwrightArgs = mode === 'lifecycle' ? ['test'] : ['test', '--config=playwright.sandbox.config.ts']
@@ -15,7 +20,7 @@ const playwrightArgs = mode === 'lifecycle' ? ['test'] : ['test', '--config=play
 await mkdir('reports', { recursive: true })
 const directory = await mkdtemp(path.resolve('reports', 'temple-' + mode + '-'))
 const profiles = path.join(directory, 'profiles')
-const report = { status: 'running', stage: 'install', scope: 'Temple ' + mode, node: process.version }
+const report = { status: 'running', stage: 'install', scope: 'Temple ' + mode, lane, node: process.version, os: { type: os.type(), release: os.release(), architecture: os.arch() } }
 console.log('Report directory: ' + directory)
 
 let child
@@ -45,6 +50,7 @@ process.on('SIGTERM', interrupt)
 async function startPreview() {
   previewProcess = fork('scripts/temple-preview.mjs', [], {
     detached: true,
+    cwd: workspace,
     stdio: ['ignore', 'inherit', 'inherit', 'ipc']
   })
   previewClosed = new Promise(resolve => previewProcess.once('close', resolve))
@@ -83,6 +89,8 @@ async function stopPreview() {
 async function run(stage, command, args) {
   if (interrupted) throw new Error('Run interrupted')
   report.stage = stage
+  writeFileSync(path.join(directory, 'progress.json.tmp'), JSON.stringify(report, null, 2) + '\n')
+  renameSync(path.join(directory, 'progress.json.tmp'), path.join(directory, 'progress.json'))
   await new Promise((resolve, reject) => {
     const sandboxEnv = sandboxRun ? { TEMPLE_SANDBOX_RUN_ID: sandboxRun } : {}
     const workflowEnv = {
@@ -91,10 +99,12 @@ async function run(stage, command, args) {
       TEMPLE_REPEATS: String(repeats),
       TEMPLE_PICKER: 'custom',
       TEMPLE_SANDBOX_MODE: mode,
-      TEMPLE_APP_ORIGIN: report.appOrigin ?? ''
+      TEMPLE_APP_ORIGIN: report.appOrigin ?? '',
+      TEMPLE_EXTENSION_DIR: path.resolve(sourceRoot, report.wallet.directory)
     }
     child = spawn(command, args, {
       detached: true,
+      cwd: workspace,
       stdio: 'inherit',
       env: { ...process.env, ...sandboxEnv, ...workflowEnv }
     })
@@ -107,55 +117,102 @@ async function run(stage, command, args) {
   })
 }
 
+async function verifyArtifact(stage) {
+  for (const name of ['baseline.json', 'scripts/temple_artifact.py']) {
+    const original = await readFile(path.join(sourceRoot, name))
+    const selected = await readFile(path.join(workspace, name))
+    if (sha256(original) !== sha256(selected)) throw new Error('Artifact verification input changed: ' + name)
+  }
+  await run(stage, 'python3', [path.join(sourceRoot, 'scripts/temple_artifact.py')])
+}
+
 try {
   await mkdir(profiles)
-  await copyFile('package-lock.json', path.join(directory, 'package-lock.json'))
+  const git = (...args) => promisify(execFile)('git', args, { cwd: sourceRoot })
+  report.harnessCommit = (await git('rev-parse', 'HEAD')).stdout.trim()
+  report.dirtySource = Boolean((await git('status', '--porcelain')).stdout.trim())
+  const prepared = await prepareWorkspace({ sourceRoot, lane, reportDirectory: directory })
+  workspace = prepared.workspace
+  report.temporaryWorkspace = workspace
+  report.sourceSha256 = prepared.sourceSha256
+  report.wallet = JSON.parse(await readFile(path.join(workspace, 'baseline.json'), 'utf8')).wallet
   await run('install', 'npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'])
-  await run('wallet artifact', 'python3', ['scripts/temple_artifact.py'])
+  await run('installed graph', process.execPath, ['scripts/verify-installed.ts', lane, path.join(directory, 'installed-graph.json'), ...(mode === 'check' ? [] : ['--browser'])])
+  if (mode !== 'check') await verifyArtifact('wallet artifact')
   await run('build', 'npm', ['run', 'build'])
-  report.stage = 'preview'
-  report.appOrigin = await startPreview()
-  console.log('Preview: ' + report.appOrigin)
-  let workflowError
-  try {
-    sandboxAttempted = sandboxRun !== undefined
-    await run(mode, 'node_modules/.bin/playwright', playwrightArgs)
-    const { stats } = JSON.parse(await readFile(path.join(directory, 'playwright.json'), 'utf8'))
-    report.stats = stats
-    if (stats.expected !== repeats || stats.unexpected !== 0 || stats.skipped !== 0 || stats.flaky !== 0) {
-      throw new Error('Expected all workflows to complete with zero failures, skips, or retries')
-    }
-  } catch (error) {
-    workflowError = error
-    report.workflowError = String(error)
-  }
-  if (mode !== 'lifecycle' && !interrupted) {
+  if (mode === 'check') {
+    await run('deterministic checks', 'npm', ['test'])
+    await run('bounded verification', 'npm', ['run', 'verify:publication'])
+    report.status = 'harness-checks-passed'
+    report.stage = 'check'
+  } else {
+    report.stage = 'preview'
+    report.appOrigin = await startPreview()
+    console.log('Preview: ' + report.appOrigin)
+    let workflowError
     try {
-      const artifacts = path.join(directory, 'artifacts')
-      const entries = await readdir(artifacts, { withFileTypes: true })
-      const candidates = entries.filter(entry => entry.isDirectory() && entry.name.startsWith('temple-sandbox-'))
-      if (candidates.length !== 1) throw new Error('Expected one sandbox evidence directory')
-      const evidence = JSON.parse(await readFile(path.join(artifacts, candidates[0].name, 'sandbox.json'), 'utf8'))
-      const { sandboxVerdict } = await import('./sandbox-verdict.ts')
-      report.sandbox = sandboxVerdict(evidence, mode)
-      if (report.sandbox.workflow === 'failed' && !workflowError) throw new Error('Sandbox workflow failed')
+      sandboxAttempted = sandboxRun !== undefined
+      await run(mode, 'node_modules/.bin/playwright', playwrightArgs)
     } catch (error) {
-      report.sandboxEvidenceError = String(error)
-      if (!workflowError) workflowError = error
+      workflowError = error
+      report.workflowError = String(error)
     }
-  }
-  if (!interrupted) {
-    await run('wallet artifact after test', 'python3', ['scripts/temple_artifact.py'])
-  }
-  if (workflowError) {
+    if (!interrupted) {
+      try {
+        const { stats } = JSON.parse(await readFile(path.join(directory, 'playwright.json'), 'utf8'))
+        report.stats = stats
+        if (stats.expected !== repeats || stats.unexpected !== 0 || stats.skipped !== 0 || stats.flaky !== 0) {
+          throw new Error('Expected all workflows to complete with zero failures, skips, or retries')
+        }
+      } catch (error) {
+        report.statisticsError = String(error)
+        if (!workflowError) workflowError = error
+      }
+    }
+    if (mode === 'lifecycle' && !interrupted) {
+      try {
+        const artifacts = path.join(directory, 'artifacts')
+        const entries = await readdir(artifacts, { withFileTypes: true })
+        const attempts = []
+        for (const entry of entries.filter(entry => entry.isDirectory() && entry.name.startsWith('temple-'))) {
+          attempts.push(JSON.parse(await readFile(path.join(artifacts, entry.name, 'measurement.json'), 'utf8')))
+        }
+        report.lifecycleAttempts = attempts
+        const { lifecycleVerdict } = await import(pathToFileURL(path.join(workspace, 'scripts/lifecycle-verdict.ts')).href)
+        report.lifecycle = lifecycleVerdict(attempts, report.stats)
+      } catch (error) {
+        report.lifecycleEvidenceError = String(error)
+        if (!workflowError) workflowError = error
+      }
+    }
+    if (mode !== 'lifecycle' && !interrupted) {
+      try {
+        const artifacts = path.join(directory, 'artifacts')
+        const entries = await readdir(artifacts, { withFileTypes: true })
+        const candidates = entries.filter(entry => entry.isDirectory() && entry.name.startsWith('temple-sandbox-'))
+        if (candidates.length !== 1) throw new Error('Expected one sandbox evidence directory')
+        const evidence = JSON.parse(await readFile(path.join(artifacts, candidates[0].name, 'sandbox.json'), 'utf8'))
+        const { sandboxVerdict } = await import(pathToFileURL(path.join(workspace, 'scripts/sandbox-verdict.ts')).href)
+        report.sandbox = sandboxVerdict(evidence, mode)
+        if (report.sandbox.workflow === 'failed' && !workflowError) throw new Error('Sandbox workflow failed')
+      } catch (error) {
+        report.sandboxEvidenceError = String(error)
+        if (!workflowError) workflowError = error
+      }
+    }
+    if (!interrupted) {
+      await verifyArtifact('wallet artifact after test')
+    }
+    if (workflowError) {
+      report.stage = mode
+      throw workflowError
+    }
     report.stage = mode
-    throw workflowError
-  }
-  report.stage = mode
-  report.status = report.sandbox?.status ?? 'workflow-passed'
-  if (report.status !== 'workflow-passed') {
-    console.error(report.status + '. See the separate workflow and health results in ' + directory)
-    process.exitCode = 1
+    report.status = report.lifecycle?.status ?? report.sandbox?.status ?? 'failed'
+    if (report.status !== 'workflow-passed') {
+      console.error(report.status + '. See the separate workflow and health results in ' + directory)
+      process.exitCode = 1
+    }
   }
 } catch (error) {
   report.status = interrupted ? 'interrupted' : 'failed'
@@ -191,6 +248,14 @@ try {
     console.error('Profile cleanup failed: ' + report.profileCleanupError)
     report.status = 'failed'
     process.exitCode = 1
+  }
+  if (workspace) {
+    try { await rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) }
+    catch (error) {
+      report.workspaceCleanupError = String(error)
+      report.status = 'failed'
+      process.exitCode = 1
+    }
   }
   if (interrupted) {
     report.status = 'interrupted'

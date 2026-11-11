@@ -99,7 +99,7 @@ export async function startTezbox() {
     }
   }
   try {
-    const started = await docker('run', '--detach', '--rm', '--pull=never', '--name', name,
+    const started = await docker('run', '--detach', '--pull=never', '--name', name,
       '--label', label, '--publish', '127.0.0.1::8732', image, '--timeout=480s', 'U')
     const ownedContainer = started.stdout.trim()
     container = ownedContainer

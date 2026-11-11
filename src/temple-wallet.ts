@@ -22,7 +22,6 @@ export function createTempleWallet(name: string, network: Network, picker: Retur
   }
   return new BeaconWallet({
     name,
-    enableMetrics: false,
     network,
     eventHandlers: picker.picker === 'custom' ? {
       [BeaconEvent.PAIR_INIT]: {
