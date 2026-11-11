@@ -78,3 +78,8 @@ Compare the same chain identity, signed bytes or receipt fields, and balance cha
 The guide has been exercised from a fresh clone with empty package and browser caches on the same Ubuntu WSL host. That reused its system libraries and Docker. A contributor run on another machine remains pending.
 
 For fast checks without wallet approvals or Docker, run `npm run consumer:check -- --lane stable` and `npm run consumer:check -- --lane candidate`. Actions runs the same graph checks and an interruption/cleanup control. Passing those jobs verifies the harness, not wallet release readiness.
+
+
+## Shadownet
+
+Use [the Shadownet guide](shadownet.md) for RPC preflight and a real Temple network-permission check. These commands send no operation. The dedicated funded-account TODO and live-transfer acceptance gates are tracked separately.

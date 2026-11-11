@@ -14,7 +14,9 @@
     "temple:transfer": "node scripts/run-temple.mjs transfer",
     "consumer:check": "node scripts/run-temple.mjs check",
     "verify:publication": "node formal/verify-publication.ts",
-    "verify:runner": "node scripts/verify-runner.mjs"
+    "verify:runner": "node scripts/verify-runner.mjs",
+    "shadownet:preflight": "node scripts/shadownet-preflight.ts",
+    "temple:shadownet:network": "node scripts/run-temple.mjs shadownet-network"
   },
   "dependencies": {
     "@ecadlabs/beacon-dapp": "4.8.4-ecad",
