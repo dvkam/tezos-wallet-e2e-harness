@@ -38,8 +38,8 @@ The network check approves a custom Tezbox network in Temple and verifies chain-
 
 Each command starts its own loopback-only container, preview server, and browser profile. The runner cleans them up when it exits. The sandbox result includes the image, chain, browser, RPC calls, and receipt when available. Find it under the printed report directory at `artifacts/*/sandbox.json`. The report keeps transfer verification, dApp errors, and wallet health separate. A confirmed transfer stays confirmed even if an error or degraded wallet health makes the command exit nonzero. Health covers browser errors and requests observed after onboarding. The report lists canceled requests separately without treating them as health failures. For a failure, check `result.json`, the Playwright report, and the post-onboarding trace in that directory.
 
-## Deterministic checks
+## Deterministic checks in Actions
 
-The deterministic commands install, verify, typecheck and build the stable and candidate package graphs. They run unit, artifact and bounded acceptance checks without a browser or Docker. They do not simulate wallet approvals or establish a real-wallet baseline.
+The Actions matrix runs the same deterministic commands to install, verify, typecheck and build the stable and candidate package graphs. They run unit, artifact and bounded acceptance checks without a browser or Docker. They do not simulate wallet approvals or establish a real-wallet baseline.
 
 Run the same checks locally with `npm run consumer:check -- --lane stable` and `npm run consumer:check -- --lane candidate`. See [the verification scope](docs/verification-properties.md).

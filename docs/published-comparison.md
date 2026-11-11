@@ -88,7 +88,7 @@ All statuses except a clean `workflow-passed` exit nonzero for real-wallet comma
 
 The commands are repeatable in their selected packages, wallet archive, browser revision, fixture and local chain. Public wallet APIs can change or rate-limit requests, so complete end-to-end outcomes are not deterministic. Those failures remain visible. Operation hashes, ports, profile names and timestamps can vary.
 
-## Deterministic checks
+## Deterministic checks in Actions
 
 ```sh
 npm run consumer:check -- --lane stable
@@ -97,7 +97,7 @@ npm run consumer:check -- --lane candidate
 
 These commands install and attest each graph, typecheck, build, run deterministic tests and check the bounded verdict properties. They need no wallet archive, browser installation, Docker or display. Their successful status is `harness-checks-passed`, not a real-wallet result.
 
-These commands can run in a small Actions matrix without browser or Docker setup. A companion CI change can use read-only repository permissions and short diagnostic retention. Real extension approval, disconnect, live wallet services and the Tezbox transfer still require the local commands above.
+The Actions workflow runs these commands and the actual runner interruption control on Node 24.22.1 and Ubuntu 24.04. Each job has a 15-minute limit, read-only repository permissions and seven-day diagnostic retention. Its npm download cache uses the selected lockfile. It needs no browser or Docker setup. Real extension approval, disconnect, live wallet services and the Tezbox transfer still require the local commands above.
 
 ## Updating a lane
 
