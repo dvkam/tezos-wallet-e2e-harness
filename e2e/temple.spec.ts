@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 import { rm, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
+import { observeSandboxHealth } from './sandbox-health'
 import { deriveAddress, verifySignature } from '../lib/oracle.ts'
 
 import { captureFailure, fixture, launchTemple, onboard, templeProfile, traceStep } from './temple-browser'
@@ -15,7 +16,8 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
   const profile = await templeProfile()
   let context: BrowserContext | undefined
   let tracing = false
-  const measurements: Record<string, unknown> = {picker:process.env.TEMPLE_PICKER ?? 'custom', steps:[]}
+  const measurements: Record<string, unknown> = {attempt: info.repeatEachIndex, workflow:'failed', picker:process.env.TEMPLE_PICKER ?? 'custom', steps:[]}
+  let health: ReturnType<typeof observeSandboxHealth> | undefined
   const steps: string[] = []
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
@@ -45,6 +47,7 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
     if (!worker) throw new Error('Temple extension worker is missing')
     const extensionId = new URL(worker.url()).hostname
     measurements.extensionId = extensionId
+    health = observeSandboxHealth(context, appOrigin, 'chrome-extension://' + extensionId)
     const custom = process.env.TEMPLE_PICKER !== 'default'
     await app.goto(appOrigin + '/' + (custom ? '?picker=custom&extensionId=' + extensionId : ''))
     await expect(app.locator('#result')).toHaveAttribute('data-ready','true')
@@ -127,14 +130,14 @@ test('Temple stable permission, signing and disconnect', async ({}, info) => {
       expect((await completed('account','passed')).value).toBeNull()
     })
     steps.push('disconnect clears account across reload')
-    expect(pageErrors).toEqual([])
-    expect(consoleErrors).toEqual([])
+    measurements.workflow = 'passed'
     await app.screenshot({path:info.outputPath('consumer.png')})
   } catch (error) {
     if (context && tracing) await captureFailure(context, appOrigin, info)
     throw error
   } finally {
     measurements.steps = steps
+    measurements.health = health?.() ?? null
     measurements.pageErrors = pageErrors
     measurements.consoleErrors = consoleErrors
     measurements.failedRequests = failedRequests

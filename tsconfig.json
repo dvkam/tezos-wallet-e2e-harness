@@ -13,7 +13,8 @@
     "types": [
       "node"
     ],
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "allowJs": true
   },
   "include": [
     "src",
@@ -22,6 +23,8 @@
     "playwright.sandbox.config.ts",
     "vite.config.ts",
     "lib",
-    "tests"
+    "tests",
+    "scripts/*.ts",
+    "formal/*.ts"
   ]
 }

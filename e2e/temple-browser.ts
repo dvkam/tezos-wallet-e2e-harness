@@ -15,7 +15,7 @@ export function templeProfile() {
 }
 
 export async function launchTemple(profile: string) {
-  const extension = path.resolve('.artifacts/temple/2.0.34')
+  const extension = path.resolve(process.env.TEMPLE_EXTENSION_DIR ?? '.artifacts/temple/2.0.34')
   const context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium',
     headless: false,
