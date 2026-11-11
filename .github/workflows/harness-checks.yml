@@ -1,0 +1,42 @@
+name: Harness checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: harness-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  consumer:
+    name: Deterministic checks / ${{ matrix.lane }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [stable, candidate]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: consumers/${{ matrix.lane }}/package-lock.json
+      - name: Install and attest graph, typecheck, build and verify verdicts
+        run: npm run consumer:check -- --lane ${{ matrix.lane }}
+      - name: Verify actual runner interruption and cleanup
+        run: npm run verify:runner
+      - name: Preserve deterministic-check diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: harness-checks-${{ matrix.lane }}
+          path: reports/temple-check-*/
+          retention-days: 7
