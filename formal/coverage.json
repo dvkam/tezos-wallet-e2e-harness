@@ -1,0 +1,20 @@
+{
+  "sourceRevision": "47fdd6eabb50c517dbef6016c1c9f901fce0741f",
+  "checkedOn": "2026-11-11",
+  "node": "24.22.1",
+  "method": "Finite enumeration against production validators, with in-memory mutation controls",
+  "originalCases": 176,
+  "casesIncludingMutations": 848,
+  "mutationControls": 6,
+  "sha256": {
+    "scripts/consumer-graph.ts": "afc6bf8348bc6591e2d03c56468dc4008ce02bcfa4bedcfb78e172534a1d1640",
+    "scripts/lifecycle-verdict.ts": "c0b6697632f5cb87fa1144eb7c32dc9e4af8fd112451a3d7b62d1102d07081c8",
+    "formal/verify-publication.ts": "6c146e632a469ec02794ea5c7eb2a77073576d7f5f66b932a53bc84280265334"
+  },
+  "exclusions": [
+    "Unbounded input space",
+    "Outer runner signal interleavings",
+    "Browser and wallet correctness",
+    "Public service availability"
+  ]
+}
