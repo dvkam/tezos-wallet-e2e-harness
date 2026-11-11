@@ -21,6 +21,7 @@
     "e2e",
     "playwright.config.ts",
     "playwright.sandbox.config.ts",
+    "playwright.shadownet.config.ts",
     "vite.config.ts",
     "lib",
     "tests",

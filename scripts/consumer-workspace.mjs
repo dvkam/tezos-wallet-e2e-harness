@@ -10,7 +10,7 @@ export const laneVersions = {
 }
 export function parseRunArgs(args) {
   const mode = args[0] ?? 'lifecycle'
-  if (!['lifecycle', 'network', 'transfer', 'check'].includes(mode)) throw new Error('Expected lifecycle, network, transfer, or check')
+  if (!['lifecycle', 'network', 'transfer', 'check', 'shadownet-network'].includes(mode)) throw new Error('Expected lifecycle, network, transfer, check, or shadownet-network')
   const rest = args.slice(1)
   if (rest.length && (rest.length !== 2 || rest[0] !== '--lane')) throw new Error('Use --lane stable|candidate|historical')
   const lane = rest[1] ?? 'stable'
@@ -21,7 +21,7 @@ export const sha256 = data => createHash('sha256').update(data).digest('hex')
 
 // These directories contain the runnable harness. Never snapshot .env files, profiles or reports.
 const directories = ['src', 'e2e', 'lib', 'tests', 'scripts', 'public', 'fixtures', 'formal', 'consumers']
-const rootFiles = ['index.html', 'sandbox.html', 'baseline.json', 'tsconfig.json', 'vite.config.ts', 'playwright.config.ts', 'playwright.sandbox.config.ts']
+const rootFiles = ['index.html', 'sandbox.html', 'shadownet.html', 'playwright.shadownet.config.ts', 'baseline.json', 'tsconfig.json', 'vite.config.ts', 'playwright.config.ts', 'playwright.sandbox.config.ts']
 
 async function filesBelow(directory, prefix = '') {
   const files = []

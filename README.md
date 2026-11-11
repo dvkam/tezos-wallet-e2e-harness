@@ -15,6 +15,8 @@ Commands default to the locked stable graph. Add `-- --lane candidate` to test t
 
 The [verification guide](docs/verification.md) covers setup, Tezbox transfers, reports and screenshot traces. The [comparison guide](docs/published-comparison.md) lists exact package versions and commands for each lane. Current observations include a stable disconnect hang and candidate wallet-health and signing-metadata findings. They do not establish a clean release baseline.
 
+For the read-only Shadownet prerequisite, run `npm run shadownet:preflight` and `xvfb-run -a npm run temple:shadownet:network -- --lane candidate`. See [the Shadownet guide](docs/shadownet.md) for RPC checks, network evidence and the funded-account TODO before live transfers.
+
 ## Deterministic checks
 
 ```sh

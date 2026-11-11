@@ -15,7 +15,8 @@ const sandboxRun = mode === 'network' || mode === 'transfer' ? randomUUID() : un
 let workspace
 let sandboxAttempted = false
 const repeats = mode === 'lifecycle' ? 3 : 1
-const playwrightArgs = mode === 'lifecycle' ? ['test'] : ['test', '--config=playwright.sandbox.config.ts']
+const playwrightArgs = mode === 'lifecycle' ? ['test']
+  : ['test', mode === 'shadownet-network' ? '--config=playwright.shadownet.config.ts' : '--config=playwright.sandbox.config.ts']
 
 await mkdir('reports', { recursive: true })
 const directory = await mkdtemp(path.resolve('reports', 'temple-' + mode + '-'))
@@ -189,14 +190,18 @@ try {
       try {
         const artifacts = path.join(directory, 'artifacts')
         const entries = await readdir(artifacts, { withFileTypes: true })
-        const candidates = entries.filter(entry => entry.isDirectory() && entry.name.startsWith('temple-sandbox-'))
-        if (candidates.length !== 1) throw new Error('Expected one sandbox evidence directory')
-        const evidence = JSON.parse(await readFile(path.join(artifacts, candidates[0].name, 'sandbox.json'), 'utf8'))
+        const candidates = entries.filter(entry => entry.isDirectory() && entry.name.startsWith(mode === 'shadownet-network' ? 'temple-shadownet-' : 'temple-sandbox-'))
+        if (candidates.length !== 1) throw new Error('Expected one network evidence directory')
+        const evidence = JSON.parse(await readFile(path.join(artifacts, candidates[0].name, mode === 'shadownet-network' ? 'shadownet.json' : 'sandbox.json'), 'utf8'))
         const { sandboxVerdict } = await import(pathToFileURL(path.join(workspace, 'scripts/sandbox-verdict.ts')).href)
-        report.sandbox = sandboxVerdict(evidence, mode)
-        if (report.sandbox.workflow === 'failed' && !workflowError) throw new Error('Sandbox workflow failed')
+        if (mode === 'shadownet-network') {
+          const { shadownetVerdict } = await import(pathToFileURL(path.join(workspace, 'scripts/shadownet-verdict.ts')).href)
+          report.shadownet = shadownetVerdict(evidence)
+        } else report.sandbox = sandboxVerdict(evidence, mode)
+        if ((report.shadownet ?? report.sandbox).workflow === 'failed' && !workflowError) throw new Error('Sandbox workflow failed')
       } catch (error) {
-        report.sandboxEvidenceError = String(error)
+        if (mode === 'shadownet-network') report.shadownetEvidenceError = String(error)
+        else report.sandboxEvidenceError = String(error)
         if (!workflowError) workflowError = error
       }
     }
@@ -208,7 +213,7 @@ try {
       throw workflowError
     }
     report.stage = mode
-    report.status = report.lifecycle?.status ?? report.sandbox?.status ?? 'failed'
+    report.status = report.lifecycle?.status ?? report.shadownet?.status ?? report.sandbox?.status ?? 'failed'
     if (report.status !== 'workflow-passed') {
       console.error(report.status + '. See the separate workflow and health results in ' + directory)
       process.exitCode = 1
