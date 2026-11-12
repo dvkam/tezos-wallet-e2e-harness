@@ -36,4 +36,6 @@ Open an attempt's trace-before-unlock.zip or trace.zip with npx playwright show-
 
 The first port batch failed during onboarding in all three attempts. Its error redaction initially removed the useful cause, so that batch remains an unresolved diagnostic. After safer error messages were added, a separate candidate batch completed all three workflows. That run still exited nonzero with wallet findings, including undefined-type console errors and failed wallet service requests. This does not establish a clean release baseline or resolve the initial onboarding instability.
 
+The final run used clean harness commit 01f9f22a6f5215b1917951faab1e79a036f37bff. All three attempts completed the seven lifecycle steps with no retries or skips, valid exact-byte signatures and Micheline metadata. Every attempt retained four failed Papers relay DNS requests and five wallet console errors. The dApp stayed clean. The command exited 1 with workflow-passed-with-wallet-findings, verified the unchanged wallet afterward, passed all three evidence scans and removed its profiles and temporary workspace.
+
 This command covers a pinned local source build. Hosted Kukai, deployed dApp compatibility and transfers remain separate work.

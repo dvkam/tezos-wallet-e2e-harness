@@ -18,7 +18,7 @@ The second command runs the actual adapter runner. It checks a missing artifact 
 
 ## Model checking
 
-Use Java 21 and TLC 2.19. Set JAVA and TLA_JAR to the verified executables on your machine.
+The recorded run used Temurin JRE 21.0.13+9 and a TLC jar whose banner reports TLC2 2.19. The jar was acquired from the [upstream v1.7.4 asset](https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar). Its SHA-256 is 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88. Check the digest before running it. The [pinned Linux x64 JRE archive](https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jre_x64_linux_hotspot_21.0.13_9.tar.gz) has SHA-256 a535a1df9c6284d9618872984e026ae0352d1f7e9e0605425c0e6114f47351dd. Set JAVA and TLA_JAR to those verified executables on your machine.
 
 ```sh
 "$JAVA" -cp "$TLA_JAR" tlc2.TLC -workers 1 -metadir /tmp/adapter-tlc-good \
