@@ -25,3 +25,13 @@ test('reported success cannot replace missing or stale public signature evidence
   attempts[1]!.signedRequests[1]!.id='first'
   assert.equal(umamiVerdict(attempts,passedStats).status,'diagnostic-failed')
 })
+test('valid cryptography remains visible while metadata and wallet health keep acceptance non-green',()=>{
+  const attempts=completeAttempts()
+  attempts[0]!.signingTypeContract.observed='missing'
+  const metadata=umamiVerdict(attempts,passedStats)
+  assert.equal(metadata.workflow,'passed')
+  assert.equal(metadata.status,'workflow-passed-with-contract-findings')
+  const health=completeAttempts()
+  const findings=health.map(attempt=>({...attempt,health:{...attempt.health,wallet:{status:'degraded',findings:['DNS failure'],canceledRequests:[]}}}))
+  assert.equal(umamiVerdict(findings,passedStats).status,'workflow-passed-with-wallet-findings')
+})
