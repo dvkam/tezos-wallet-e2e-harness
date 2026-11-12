@@ -130,7 +130,6 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     expect(verifySignature(fixture.payload.slice(0,-2)+'00',fixture.publicKey,signed.response.signature)).toBe(false)
     measurement.signature=signed.response.signature
     measurement.signingTypeContract={status:signed.response.signingType==='micheline'?'passed':'failed',expected:'micheline',observed:signed.response.signingType??null}
-    expect(signed.response.signingType).toBe('micheline')
     signedRequests.push({id:signed.response.id,signature:signed.response.signature,requestedPayload:signed.requestedPayload})
     expect(new Set(signedRequests.map(request=>request.id)).size).toBe(signedRequests.length)
     measurement.signedRequests=signedRequests
@@ -186,7 +185,7 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
       try{await ownedWallet?.page.screenshot({path:info.outputPath('wallet-failure.png')})}catch{}
       try{await consumerContext?.pages()[0]?.screenshot({path:info.outputPath('consumer-failure.png')})}catch{}
     }
-    const cleanup=async(action:()=>Promise<unknown>)=>{try{await action()}catch{cleanupErrors.push('Evidence capture or owned resource cleanup failed')}}
+    const cleanup=async(action:()=>Promise<unknown>)=>{try{await action()}catch(error:unknown){cleanupErrors.push(ownedWallet?.redact(String(error))??String(error))}}
     if(tracing&&consumerContext)await cleanup(()=>consumerContext!.tracing.stop({path:info.outputPath('consumer-trace-final.zip')}))
     if(walletTracing&&ownedWallet)await cleanup(()=>ownedWallet!.context.tracing.stop({path:info.outputPath('wallet-trace-final.zip')}))
     await cleanup(async()=>ownedBrowser?.close())

@@ -1,4 +1,4 @@
-import { readFile, readdir, rm } from 'node:fs/promises'
+import { readFile, readdir, readlink, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -24,31 +24,37 @@ export function assertOwnedProfile(profile: string, profileRoot: string) {
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative) ||
       !/^umami-[^/]+$/.test(relative)) throw new Error('Umami ledger profile is outside the owned root')
 }
+async function groupMembers(group: number) {
+  const members: {pid:number;startTicks:string|undefined;args:string[];executable:string}[]=[]
+  for(const name of await readdir('/proc')){
+    if(!/^\d+$/.test(name))continue
+    const pid=Number(name), state=await processIdentity(pid)
+    if(!state||state.group!==group||state.state==='Z')continue
+    try{members.push({pid,startTicks:state.startTicks,executable:await readlink('/proc/'+pid+'/exe'),args:(await readFile('/proc/'+pid+'/cmdline','utf8')).split('\0')})}
+    catch(error:unknown){if(!(error instanceof Error)||!('code' in error)||!['ENOENT','ESRCH'].includes(String(error.code)))throw error}
+  }
+  return members
+}
 export async function stopOwnedUmami(ledger: z.infer<typeof ledgerSchema>) {
-  for (const process of ledger.processes) {
-    const current = await processIdentity(process.pid)
-    if (!current || current.state === 'Z') continue
-    if (current.startTicks !== process.startTicks || current.group !== process.pid) throw new Error('Umami PID ownership changed')
-    const args = (await readFile('/proc/' + process.pid + '/cmdline', 'utf8')).split('\0')
-    if (args[0] !== ledger.binary || !args.includes('--user-data-dir=' + path.join(ledger.profile, 'browser'))) {
-      throw new Error('Umami command ownership mismatch')
+  for(const owned of ledger.processes){
+    const leader=await processIdentity(owned.pid)
+    if(leader&&leader.startTicks!==owned.startTicks)throw new Error('Umami PID ownership changed')
+    const members=await groupMembers(owned.pid)
+    if(!members.length)continue
+    const expected='--user-data-dir='+path.join(ledger.profile,'browser')
+    if(members.some(member=>member.executable!==ledger.binary)||!members.some(member=>(' '+member.args.join(' ')+' ').includes(' '+expected+' '))){
+      throw new Error('Umami command group ownership mismatch')
     }
-    const signal = (value: NodeJS.Signals) => {
-      try { globalThis.process.kill(-process.pid, value) }
-      catch (error: unknown) {
-        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ESRCH') throw error
-      }
-    }
-    const live = async () => {
-      const observed = await processIdentity(process.pid)
-      return observed?.startTicks === process.startTicks && observed.state !== 'Z'
+    const signal=(value:NodeJS.Signals)=>{
+      try{process.kill(-owned.pid,value)}
+      catch(error:unknown){if(!(error instanceof Error)||!('code' in error)||error.code!=='ESRCH')throw error}
     }
     signal('SIGTERM')
-    for (let count = 0; count < 30 && await live(); count++) await delay(100)
-    if (await live()) {
+    for(let count=0;count<30&&(await groupMembers(owned.pid)).length;count++)await delay(100)
+    if((await groupMembers(owned.pid)).length){
       signal('SIGKILL')
-      for (let count = 0; count < 30 && await live(); count++) await delay(100)
-      if (await live()) throw new Error('Owned Umami process did not stop')
+      for(let count=0;count<30&&(await groupMembers(owned.pid)).length;count++)await delay(100)
+      if((await groupMembers(owned.pid)).length)throw new Error('Owned Umami process group did not stop')
     }
   }
 }

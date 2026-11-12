@@ -13,3 +13,15 @@ test('three incomplete Umami attempts remain diagnostic failures with their stag
   assert.equal(result.attempts.length, 3)
   assert.equal(result.attempts[1].stage, 'recovery-after-signing-rejection')
 })
+import {completeAttempts,passedStats} from './umami-fixture.ts'
+test('completed evidence passes only with independent signatures and exact identity',()=>{
+  assert.equal(umamiVerdict(completeAttempts(),passedStats).status,'workflow-passed')
+  const changed=completeAttempts()
+  changed[0]!.signedRequests[1]!.requestedPayload+='00'
+  assert.equal(umamiVerdict(changed,passedStats).status,'diagnostic-failed')
+})
+test('reported success cannot replace missing or stale public signature evidence',()=>{
+  const attempts=completeAttempts()
+  attempts[1]!.signedRequests[1]!.id='first'
+  assert.equal(umamiVerdict(attempts,passedStats).status,'diagnostic-failed')
+})
