@@ -25,6 +25,7 @@
     "lib",
     "tests",
     "scripts/*.ts",
-    "formal/*.ts"
+    "formal/*.ts",
+    "playwright.kukai.config.ts"
   ]
 }

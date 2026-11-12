@@ -33,3 +33,19 @@ export function createTempleWallet(name: string, network: Network, picker: Retur
     } : undefined
   })
 }
+
+// The P2P descriptor is the public pairing link consumed by web and desktop wallets.
+export function createP2PWallet(name: string, network: Network) {
+  const pairing = document.querySelector('#pairing-p2p')
+  if (!(pairing instanceof HTMLElement)) throw new Error('P2P pairing control is missing')
+  return new BeaconWallet({
+    name, network, enableMetrics: false,
+    eventHandlers: {
+      [BeaconEvent.PAIR_INIT]: { handler: async data => {
+        pairing.dataset.ready = 'false'
+        pairing.textContent = await data.p2pPeerInfo
+        pairing.dataset.ready = 'true'
+      } }
+    }
+  })
+}

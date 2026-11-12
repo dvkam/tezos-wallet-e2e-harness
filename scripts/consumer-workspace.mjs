@@ -34,7 +34,7 @@ async function filesBelow(directory, prefix = '') {
   }
   return files
 }
-export async function prepareWorkspace({ sourceRoot, lane, reportDirectory }) {
+export async function prepareWorkspace({ sourceRoot, lane, reportDirectory, extraRootFiles = [] }) {
   const workspace = await mkdtemp(path.join(tmpdir(), 'temple-consumer-'))
   try {
     const sourceHashes = {}
@@ -51,7 +51,7 @@ export async function prepareWorkspace({ sourceRoot, lane, reportDirectory }) {
         sourceHashes[relative] = sha256(body)
       }
     }
-    for (const name of rootFiles) {
+    for (const name of [...rootFiles, ...extraRootFiles]) {
       const body = await readFile(path.join(sourceRoot, name))
       await writeFile(path.join(workspace, name), body)
       sourceHashes[name] = sha256(body)

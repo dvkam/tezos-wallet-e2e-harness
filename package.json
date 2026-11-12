@@ -14,7 +14,10 @@
     "temple:transfer": "node scripts/run-temple.mjs transfer",
     "consumer:check": "node scripts/run-temple.mjs check",
     "verify:publication": "node formal/verify-publication.ts",
-    "verify:runner": "node scripts/verify-runner.mjs"
+    "verify:runner": "node scripts/verify-runner.mjs",
+    "kukai:acquire": "node scripts/kukai-artifact.mjs --prepare",
+    "kukai:verify": "node scripts/kukai-artifact.mjs",
+    "kukai:lifecycle": "node scripts/run-adapter.mjs kukai"
   },
   "dependencies": {
     "@ecadlabs/beacon-dapp": "4.8.4-ecad",
