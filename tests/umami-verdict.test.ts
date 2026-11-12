@@ -27,7 +27,7 @@ test('reported success cannot replace missing or stale public signature evidence
 })
 test('valid cryptography remains visible while metadata and wallet health keep acceptance non-green',()=>{
   const attempts=completeAttempts()
-  attempts[0]!.signingTypeContract.observed='missing'
+  attempts[0]!.signedRequests[0]!.signingType='missing'
   const metadata=umamiVerdict(attempts,passedStats)
   assert.equal(metadata.workflow,'passed')
   assert.equal(metadata.status,'workflow-passed-with-contract-findings')

@@ -7,7 +7,7 @@ export function completeAttempts(){
   attempt,wallet:'umami',picker:'p2p',workflow:'passed',stage:'completed',steps:[...umamiSteps],
   artifact:{name:'Umami',version:'2.3.8',sourceCommit:'771e1d34ac714899a0056079f5d0e764bce427ef',archiveSha256:'98c67e59a5f716cef4ea24b5039143fd72ad038dfc21028233210f5252fa5a5f',extractedFileCount:187,extractedTreeSha256:'1'.repeat(64),executableSha256:'2'.repeat(64),extractedFilesMatchArchive:true},
   walletRuntimeVersion:'122.0.6261.156',consumerBrowserVersion:'148.0.7778.0',account:{...identity},
-  signedRequests:[{id:'first',signature,requestedPayload:payload},{id:'second',signature,requestedPayload:payload}],
+  signedRequests:[{id:'first',signature,requestedPayload:payload,signingType:'micheline'},{id:'second',signature,requestedPayload:payload,signingType:'micheline'}],
   signingTypeContract:{expected:'micheline',observed:'micheline'},
   disconnectContract:{status:'passed',accountAfterReload:null},
   signingRejectionContract:{status:'passed',observedAccount:null,code:'ABORTED_ERROR'},

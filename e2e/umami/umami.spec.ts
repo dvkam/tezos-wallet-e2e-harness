@@ -109,7 +109,7 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     await app.reload();await expect(app.locator('#result')).toHaveAttribute('data-ready','true');sequence=0
     await app.locator('#account').click();expect((await completed('account','passed')).value).toEqual(identity)
     steps.push('authorized account survives reload')
-    const signedRequests:{id:string;signature:string;requestedPayload:string}[]=[]
+    const signedRequests:{id:string;signature:string;requestedPayload:string;signingType:unknown}[]=[]
     async function approveSigning() {
     stage='signing-approval'
     const dialog=wallet.page.getByRole('dialog')
@@ -130,7 +130,7 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     expect(verifySignature(fixture.payload.slice(0,-2)+'00',fixture.publicKey,signed.response.signature)).toBe(false)
     measurement.signature=signed.response.signature
     measurement.signingTypeContract={status:signed.response.signingType==='micheline'?'passed':'failed',expected:'micheline',observed:signed.response.signingType??null}
-    signedRequests.push({id:signed.response.id,signature:signed.response.signature,requestedPayload:signed.requestedPayload})
+    signedRequests.push({id:signed.response.id,signature:signed.response.signature,requestedPayload:signed.requestedPayload,signingType:signed.response.signingType??null})
     expect(new Set(signedRequests.map(request=>request.id)).size).toBe(signedRequests.length)
     measurement.signedRequests=signedRequests
     await expect(dialog).toBeHidden()

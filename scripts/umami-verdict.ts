@@ -29,7 +29,7 @@ export const umamiMeasurementSchema = z.object({
   workflow: z.enum(['passed', 'failed']), stage: z.string(), steps: z.array(z.string()),
   artifact: umamiArtifactSchema.optional(), walletRuntimeVersion: z.string().optional(),
   consumerBrowserVersion: z.string().optional(), account: identity.optional(),
-  signedRequests: z.array(z.object({ id: z.string().min(1), signature: z.string(), requestedPayload: z.string() })),
+  signedRequests: z.array(z.object({ id: z.string().min(1), signature: z.string(), requestedPayload: z.string(), signingType: z.unknown() })),
   signingTypeContract: z.object({ expected: z.literal('micheline'), observed: z.unknown() }).optional(),
   disconnectContract: z.object({ status: z.literal('passed'), accountAfterReload: z.null() }).optional(),
   signingRejectionContract: z.object({ status: z.literal('passed'), observedAccount: z.null(), code: z.literal('ABORTED_ERROR') }).optional(),
@@ -68,7 +68,7 @@ export function umamiVerdict(values: unknown, stats: unknown) {
   const status = workflow === 'failed' ? 'diagnostic-failed'
     : attempts.some(attempt => attempt.health?.dapp.status !== 'clean') ? 'workflow-passed-with-dapp-errors'
     : attempts.some(attempt => attempt.health?.wallet.status !== 'clean') ? 'workflow-passed-with-wallet-findings'
-    : attempts.some(attempt => attempt.signingTypeContract?.observed !== 'micheline') ? 'workflow-passed-with-contract-findings'
+    : attempts.some(attempt => attempt.signingTypeContract?.observed !== 'micheline' || attempt.signedRequests.some(request => request.signingType !== 'micheline')) ? 'workflow-passed-with-contract-findings'
     : 'workflow-passed'
   return { workflow, status, attempts, reasons }
 }
