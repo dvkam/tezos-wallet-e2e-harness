@@ -191,6 +191,8 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     await cleanup(async()=>ownedBrowser?.close())
     await cleanup(async()=>ownedWallet?.close())
     measurement.stage=stage;measurement.health=ownedWallet?{scope:'after-CDP-attachment-including-onboarding',dapp:healthSide('consumer'),wallet:healthSide('wallet')}:null
+    measurement.externalEndpoints=[...externalEndpoints].sort()
+    await writeFile(info.outputPath('measurement.json'),ownedWallet?.redact(JSON.stringify(measurement,null,2))??JSON.stringify(measurement,null,2))
     const scan=spawnSync('python3',['scripts/umami-evidence-scan.py',info.outputDir],{input:JSON.stringify([fixture.mnemonic,password]),encoding:'utf8',timeout:30_000})
     measurement.secretScan={status:scan.status===0?'passed':'failed',scope:'literal-text-and-zip-entries-no-OCR'}
     if(scan.status!==0)cleanupErrors.push('Sensitive evidence scan failed')
@@ -199,7 +201,7 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     measurement.externalEndpoints=[...externalEndpoints].sort()
     const body=ownedWallet?.redact(JSON.stringify(measurement,null,2))??JSON.stringify(measurement,null,2)
     await writeFile(info.outputPath('measurement.json'),body)
-    await info.attach('measurement',{path:info.outputPath('measurement.json'),contentType:'application/json'})
+    if(scan.status===0)await info.attach('measurement',{path:info.outputPath('measurement.json'),contentType:'application/json'})
     if(cleanupErrors.length)throw new Error(cleanupErrors.join('; '))
   }
 })
