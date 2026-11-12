@@ -34,7 +34,7 @@ export function consoleOrigin(extensionOrigin: string, urls: {
   return originOf(urls.worker) ?? (source === extensionOrigin ? source : originOf(urls.page) ?? source)
 }
 
-export function observeSandboxHealth(context: BrowserContext, appOrigin: string, extensionOrigin: string) {
+export function observeSandboxHealth(context: BrowserContext, appOrigin: string, extensionOrigin: string, scope = 'post-onboarding') {
   const dapp: Finding[] = []
   const wallet: Finding[] = []
 
@@ -84,7 +84,7 @@ export function observeSandboxHealth(context: BrowserContext, appOrigin: string,
   }
 
   return () => ({
-    scope: 'post-onboarding',
+    scope,
     dapp: summarize(dapp, 'failed'),
     wallet: summarize(wallet, 'degraded')
   })

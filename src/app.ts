@@ -1,17 +1,20 @@
 import { parseConsumerConfig } from './config'
 import { describeError } from './errors'
 import { TezosToolkit } from '@taquito/taquito'
-import { createTempleWallet } from './temple-wallet'
+import { createTempleWallet, createP2PWallet } from './temple-wallet'
 import { NetworkType, SigningType } from '@ecadlabs/beacon-types'
 
 const config = parseConsumerConfig(new URLSearchParams(location.search))
-const appName = 'Temple stable baseline'
+const appName = config.picker === 'p2p' ? (config.wallet === 'kukai' ? 'Kukai lifecycle test' : 'Umami lifecycle test') : 'Temple stable baseline'
+document.title = appName
+const heading = document.querySelector('h1')
+if (heading) heading.textContent = appName
 const result = document.querySelector('#result')
 if (!(result instanceof HTMLElement)) {
   throw new Error('Consumer controls are missing')
 }
 
-const wallet = createTempleWallet(appName, { type: NetworkType.MAINNET }, config)
+const wallet = config.picker === 'p2p' ? createP2PWallet(appName, { type: NetworkType.MAINNET }) : createTempleWallet(appName, { type: NetworkType.MAINNET }, config)
 const tezos = new TezosToolkit('https://prod.tcinfra.net/rpc/mainnet')
 tezos.setWalletProvider(wallet)
 const challenge = '05010000003754657a6f73205369676e6564204d6573736167653a2054656d706c6520737461626c6520626173656c696e652074657374206f6e6c792e'
@@ -35,6 +38,10 @@ async function activeAccount() {
   } : null
 }
 async function run(operation: Operation, action: () => Promise<unknown>): Promise<void> {
+  if (operation === 'permission' && config.picker === 'p2p') {
+    const pairing = document.querySelector('#pairing-p2p')
+    if (pairing instanceof HTMLElement) { pairing.dataset.ready = 'false'; pairing.textContent = '' }
+  }
   const requestSequence = ++sequence
   show({ operation, sequence: requestSequence, status: 'pending' })
   let completion: Completion

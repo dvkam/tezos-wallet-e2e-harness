@@ -8,13 +8,18 @@
     "preview": "vite preview --host 127.0.0.1",
     "wallet:acquire": "python3 scripts/temple_artifact.py --acquire",
     "wallet:verify": "python3 scripts/temple_artifact.py",
-    "test": "node --test tests/*.test.ts && python3 -m unittest discover -s scripts -p test_temple_artifact.py",
+    "test": "node --test tests/*.test.ts && python3 -m unittest discover -s scripts -p test_temple_artifact.py && python3 -m unittest scripts.test_wallet_evidence",
     "temple:lifecycle": "node scripts/run-temple.mjs lifecycle",
     "temple:network": "node scripts/run-temple.mjs network",
     "temple:transfer": "node scripts/run-temple.mjs transfer",
     "consumer:check": "node scripts/run-temple.mjs check",
     "verify:publication": "node formal/verify-publication.ts",
-    "verify:runner": "node scripts/verify-runner.mjs"
+    "verify:runner": "node scripts/verify-runner.mjs",
+    "kukai:acquire": "node scripts/kukai-artifact.mjs --prepare",
+    "kukai:verify": "node scripts/kukai-artifact.mjs",
+    "kukai:lifecycle": "node scripts/run-adapter.mjs kukai",
+    "verify:adapters": "node formal/verify-adapters.ts",
+    "verify:adapter-runner": "node scripts/verify-adapter-runner.mjs"
   },
   "dependencies": {
     "@ecadlabs/beacon-dapp": "4.8.5-ecad",

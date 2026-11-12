@@ -24,4 +24,6 @@ npm run consumer:check -- --lane candidate
 
 These are also the Actions matrix commands. They verify the harness without a browser or Docker; they do not simulate wallet approvals. See [the verification scope](docs/verification-properties.md).
 
+The [Kukai lifecycle diagnostic](docs/kukai.md) runs a pinned source build through real P2P approvals. It retains wallet service failures and does not establish a clean release baseline.
+
 The [proposal](proposal.md) describes other wallets and planned coverage.

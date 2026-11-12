@@ -1,0 +1,21 @@
+{
+  "cases": 70,
+  "killedMutants": 5,
+  "sourceSha256": {
+    "scripts/kukai-verdict.ts": "db6d9d8724033de0c200daaf36db99eb75099bd7ba0dbc1931470cb7600a7aa6",
+    "scripts/run-adapter.mjs": "2b1c8c5ca3fa1feedf49983b7e184c2daf621ef6255ec960df26be852ad05357",
+    "e2e/kukai.spec.ts": "657bbfd66fdbb6bf8685d5370400cbe977b5ed50f7c86dc72798bd9f114cc1c5",
+    "formal/AdapterPublication.tla": "7cca5faa42a4a5f5e926c5e45db9833aec9403f2d7b04e4263f4beb59a0ead41",
+    "scripts/adapter-publication.mjs": "76791dee941d794e38f6e039e9e3556428c772ac8059269767560403ae68c56b",
+    "scripts/adapter-cleanup.mjs": "fef63e92ae252abd5b06556989a7ffd37c178f4ae4ab53569e1fc9f321dcef30"
+  },
+  "sourceRevision": "74167fa26810ec4605db7a50c1897a7aa0e6c7ff",
+  "modelChecking": {
+    "tool": "TLC2 2.19, revision 5a47802",
+    "java": "Temurin21.0.13",
+    "tlcJarSha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+    "javaExecutableSha256": "7afc28801f744050aeba646b20e7314265279f76f9d0273b21a2b66411e1bf6d",
+    "correctDistinctStates": 128,
+    "mutant": "counterexample to InterruptedFails with GuardAtPublish=FALSE"
+  }
+}
