@@ -43,7 +43,7 @@ test('Kukai real P2P permission, signing and disconnect',async({},info)=>{
 
   const verification=JSON.parse(execFileSync(process.execPath,['scripts/kukai-artifact.mjs'],{encoding:'utf8'}))
   const artifact=z.object({sourceCommit:z.string(),files:z.number(),verified:z.literal(true),manifestSha256:z.string(),provenance:z.literal('clean-install-and-upstream-build')}).parse(verification)
-  await writeFile(info.outputPath('artifact.json'),await readFile(path.join(process.env.WALLET_ARTIFACT_ROOT??'.artifacts','kukai/artifact.json')))
+  await writeFile(info.outputPath('artifact.json'),await readFile(path.join(process.env.KUKAI_ARTIFACT_ROOT??path.join(process.env.WALLET_ARTIFACT_ROOT??'.artifacts','kukai'),'artifact.json')))
   const profile=await mkdtemp(path.join(profileRoot,'kukai-'))
   const context=await chromium.launchPersistentContext(profile,{headless:false,channel:'chromium'}).catch(async(error:unknown)=>{
     await rm(profile,{recursive:true,force:true})

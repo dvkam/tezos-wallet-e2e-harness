@@ -45,7 +45,7 @@ async function trackedInventory(){
 export async function verifyKukaiArtifact(){
   const manifest=JSON.parse(await readFile(manifestPath,'utf8'))
   checkSource()
-  if(manifest.sourceCommit!==commit||manifest.provenance!=='clean-install-and-upstream-build')throw new Error('Kukai artifact lacks a completed clean preparation; run --prepare')
+  if(manifest.sourceCommit!==commit||manifest.provenance!=='clean-install-and-upstream-build'||manifest.buildNode!=='v22.23.4')throw new Error('Kukai artifact lacks a completed clean preparation; run --prepare')
   if(JSON.stringify(await trackedInventory())!==JSON.stringify(manifest.sourceFiles))throw new Error('Kukai build inputs changed since preparation')
   if(JSON.stringify(await inventory(path.join(source,'dist')))!==JSON.stringify(manifest.files))throw new Error('Kukai built artifact differs from the prepared baseline')
   return manifest

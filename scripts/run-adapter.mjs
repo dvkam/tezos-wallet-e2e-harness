@@ -4,6 +4,9 @@ import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import os from 'node:os'
+import { createRequire } from 'node:module'
+import { publishAdapterResult } from './adapter-publication.mjs'
+import { cleanupOwnedBrowsers } from './adapter-cleanup.mjs'
 import path from 'node:path'
 import { parseRunArgs, prepareWorkspace } from './consumer-workspace.mjs'
 
@@ -48,6 +51,9 @@ async function run(stage, command, args) {
     child = spawn(command, args, { cwd: workspace, env: env(), detached: true, stdio: 'inherit' })
     child.once('error', reject)
     child.once('close', (code, signal) => {
+      const pid = child.pid
+      // A worker can exit before its subprocesses. Reap its owned process group.
+      if (pid) signalGroup(pid, 'SIGKILL')
       child = undefined
       if (code === 0 && !interrupted) resolve()
       else reject(new Error(stage + ' failed (' + (signal ?? code) + ')'))
@@ -74,7 +80,7 @@ async function startServer(script, cwd) {
 async function verifyArtifact() {
   if (interrupted) throw new Error('Run interrupted')
   const { stdout } = await promisify(execFile)(process.execPath,
-    [path.join(sourceRoot, 'scripts', wallet + '-artifact.mjs')], { env: env(), maxBuffer: 4 * 1024 * 1024 })
+    [path.join(sourceRoot, 'scripts', wallet + '-artifact.mjs')], { env: env(), maxBuffer: 4 * 1024 * 1024, timeout: 30_000 })
   return JSON.parse(stdout)
 }
 async function measurements() {
@@ -97,6 +103,7 @@ try {
   const prepared = await prepareWorkspace({ sourceRoot, lane, reportDirectory: directory,
     extraRootFiles: ['playwright.' + wallet + '.config.ts'] })
   workspace = prepared.workspace
+  report.temporaryWorkspace = workspace
   report.sourceSha256 = prepared.sourceSha256
   await run('install', 'npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'])
   await run('installed graph', process.execPath, ['scripts/verify-installed.ts', lane, path.join(directory, 'installed-graph.json'), '--browser'])
@@ -133,14 +140,23 @@ try {
       await promisify(execFile)(process.execPath, [path.join(workspace, 'scripts/umami-cleanup.ts'), directory, profiles])
     } catch (error) { report.walletCleanupError = String(error); report.status = 'failed' }
   }
+  if (workspace) {
+    try {
+      const require = createRequire(path.join(workspace, 'package.json'))
+      const { chromium } = require('@playwright/test')
+      report.browserCleanup = await cleanupOwnedBrowsers(profiles, chromium.executablePath())
+    } catch (error) {
+      // If installation never completed no browser could have launched.
+      if (!['install', undefined].includes(report.stage)) {
+        report.browserCleanupError = String(error); report.status = 'failed'
+      }
+    }
+  }
   for (const owned of [profiles, workspace].filter(Boolean)) {
     try { await rm(owned, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }) }
     catch (error) { report.cleanupError = String(error); report.status = 'failed' }
   }
-  // No await may separate the final interruption guard and publication.
-  if (interrupted) report.status = 'interrupted'
-  writeFileSync(path.join(directory, 'result.json'), JSON.stringify(report, null, 2) + '\n')
-  process.exitCode = report.status === 'workflow-passed' ? 0 : 1
+  process.exitCode = publishAdapterResult(report, interrupted, path.join(directory, 'result.json'))
   process.off('SIGINT', interrupt)
   process.off('SIGTERM', interrupt)
   console.log(report.status + ': ' + directory)

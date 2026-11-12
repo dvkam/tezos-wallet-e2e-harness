@@ -17,7 +17,9 @@
     "verify:runner": "node scripts/verify-runner.mjs",
     "kukai:acquire": "node scripts/kukai-artifact.mjs --prepare",
     "kukai:verify": "node scripts/kukai-artifact.mjs",
-    "kukai:lifecycle": "node scripts/run-adapter.mjs kukai"
+    "kukai:lifecycle": "node scripts/run-adapter.mjs kukai",
+    "verify:adapters": "node formal/verify-adapters.ts",
+    "verify:adapter-runner": "node scripts/verify-adapter-runner.mjs"
   },
   "dependencies": {
     "@ecadlabs/beacon-dapp": "4.8.5-ecad",
