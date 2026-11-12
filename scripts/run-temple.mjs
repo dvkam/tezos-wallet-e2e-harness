@@ -143,6 +143,7 @@ try {
   if (mode === 'check') {
     await run('deterministic checks', 'npm', ['test'])
     await run('bounded verification', 'npm', ['run', 'verify:publication'])
+    await run('bounded Umami verdict verification', 'npm', ['run', 'verify:umami'])
     report.status = 'harness-checks-passed'
     report.stage = 'check'
   } else {
