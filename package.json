@@ -8,7 +8,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "wallet:acquire": "python3 scripts/temple_artifact.py --acquire",
     "wallet:verify": "python3 scripts/temple_artifact.py",
-    "test": "node --test tests/*.test.ts && python3 -m unittest discover -s scripts -p test_temple_artifact.py && python3 -m unittest scripts.test_wallet_evidence",
+    "test": "node --test tests/*.test.ts && python3 -m unittest discover -s scripts -p 'test_*.py'",
     "temple:lifecycle": "node scripts/run-temple.mjs lifecycle",
     "temple:network": "node scripts/run-temple.mjs network",
     "temple:transfer": "node scripts/run-temple.mjs transfer",
@@ -19,7 +19,12 @@
     "kukai:verify": "node scripts/kukai-artifact.mjs",
     "kukai:lifecycle": "node scripts/run-adapter.mjs kukai",
     "verify:adapters": "node formal/verify-adapters.ts",
-    "verify:adapter-runner": "node scripts/verify-adapter-runner.mjs"
+    "verify:adapter-runner": "node scripts/verify-adapter-runner.mjs",
+    "umami:acquire": "python3 scripts/umami_artifact.py --acquire",
+    "umami:verify": "node scripts/umami-artifact.mjs",
+    "umami:diagnostics": "node scripts/run-adapter.mjs umami",
+    "verify:umami": "node formal/verify-umami.ts",
+    "verify:umami-cleanup": "node scripts/verify-umami-cleanup.ts"
   },
   "dependencies": {
     "@ecadlabs/beacon-dapp": "4.8.4-ecad",

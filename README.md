@@ -26,4 +26,6 @@ These are also the Actions matrix commands. They verify the harness without a br
 
 The [Kukai lifecycle diagnostic](docs/kukai.md) runs a pinned source build through real P2P approvals. It retains wallet service failures and does not establish a clean release baseline.
 
+The [Umami diagnostics](docs/umami.md) run the unchanged desktop wallet through public pairing and approval flows. The recorded run completed zero of three workflows. Recovery failures remain visible; this is diagnostic coverage.
+
 The [proposal](proposal.md) describes other wallets and planned coverage.

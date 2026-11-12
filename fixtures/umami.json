@@ -1,0 +1,17 @@
+{
+  "name": "Umami",
+  "version": "2.3.8",
+  "sourceCommit": "771e1d34ac714899a0056079f5d0e764bce427ef",
+  "source": "https://github.com/trilitech/umami-v2/tree/771e1d34ac714899a0056079f5d0e764bce427ef",
+  "url": "https://github.com/trilitech/umami-v2/releases/download/v2.3.8/umami_2.3.8_amd64.deb",
+  "sha256": "98c67e59a5f716cef4ea24b5039143fd72ad038dfc21028233210f5252fa5a5f",
+  "archive": ".artifacts/umami/umami_2.3.8_amd64.deb",
+  "directory": ".artifacts/umami/unpacked",
+  "executable": "opt/Umami/@umamidesktop",
+  "signingRejectionPolicy": {
+    "errorCode": "ABORTED_ERROR",
+    "activeAccount": "cleared",
+    "requiresNewPermission": true,
+    "source": "https://github.com/trilitech/umami-v2/blob/771e1d34ac714899a0056079f5d0e764bce427ef/apps/desktop/src/utils/beacon/useHandleBeaconMessage.tsx"
+  }
+}
