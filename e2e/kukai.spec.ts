@@ -177,12 +177,15 @@ test('Kukai real P2P permission, signing and disconnect',async({},info)=>{
     }
     measurement.health=health?.()
     measurement.phase=phase
+    // Include the just-written measurement in the scan, not only trace resources.
+    measurement.secretScan={status:'failed'}
+    await writeFile(info.outputPath('measurement.json'),JSON.stringify(measurement,null,2))
     const scan=spawnSync('python3',['scripts/scan-wallet-evidence.py',info.outputDir],{
       input:JSON.stringify([password,fixture.mnemonic]),encoding:'utf8'
     })
     measurement.secretScan={status:scan.status===0?'passed':'failed'}
     await writeFile(info.outputPath('measurement.json'),JSON.stringify(measurement,null,2))
-    await info.attach('measurement',{path:info.outputPath('measurement.json'),contentType:'application/json'})
+    if(scan.status===0)await info.attach('measurement',{path:info.outputPath('measurement.json'),contentType:'application/json'})
     if(scan.status!==0)throw new Error('Secret scan failed; evidence must remain private')
   }
 })
