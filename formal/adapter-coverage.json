@@ -4,12 +4,12 @@
   "sourceSha256": {
     "scripts/kukai-verdict.ts": "db6d9d8724033de0c200daaf36db99eb75099bd7ba0dbc1931470cb7600a7aa6",
     "scripts/run-adapter.mjs": "2b1c8c5ca3fa1feedf49983b7e184c2daf621ef6255ec960df26be852ad05357",
-    "e2e/kukai.spec.ts": "6d93f9b068784526c19a26df1b19a13bbb1f58c7edce8562e68769c9253dfb0f",
+    "e2e/kukai.spec.ts": "657bbfd66fdbb6bf8685d5370400cbe977b5ed50f7c86dc72798bd9f114cc1c5",
     "formal/AdapterPublication.tla": "7cca5faa42a4a5f5e926c5e45db9833aec9403f2d7b04e4263f4beb59a0ead41",
     "scripts/adapter-publication.mjs": "76791dee941d794e38f6e039e9e3556428c772ac8059269767560403ae68c56b",
     "scripts/adapter-cleanup.mjs": "fef63e92ae252abd5b06556989a7ffd37c178f4ae4ab53569e1fc9f321dcef30"
   },
-  "sourceRevision": "7b9b09283a9fae1ebce52875da3ac9de02c291b9",
+  "sourceRevision": "74167fa26810ec4605db7a50c1897a7aa0e6c7ff",
   "modelChecking": {
     "tool": "TLC2 2.19, revision 5a47802",
     "java": "Temurin21.0.13",
