@@ -5,6 +5,8 @@ description: Check Kukai evidence acceptance and interrupted adapter-run publica
 
 # Verify adapter publication
 
+Reviewed source revision: 7b9b09283a9fae1ebce52875da3ac9de02c291b9. The source hashes and tool hashes are in formal/adapter-coverage.json.
+
 Read docs/kukai.md and docs/adapter-verification.md. Use Node 24.22.1. Run npm test, npm run build, npm run verify:adapters and npm run verify:publication. The adapter check must accept unchanged production code and expose all five broken variants. Do not weaken the properties to accept a failed diagnostic run.
 
 The covered functions are scripts/kukai-verdict.ts:kukaiVerdict and scripts/adapter-publication.mjs:publishAdapterResult. The finite validator domain has 64 combinations of duplicate attempts, invalid signatures, incomplete steps, wrong signing metadata, wallet errors and skipped tests. Six additional cases execute the production publisher. A removed interruption guard must publish a false clean result in the mutation control.
