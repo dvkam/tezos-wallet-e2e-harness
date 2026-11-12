@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto'
 import {umamiVerdict} from '../scripts/umami-verdict.ts'
 import {completeAttempts,passedStats} from '../tests/umami-fixture.ts'
 let cases=0
-for(let mask=0;mask<128;mask++){
+for(let mask=0;mask<256;mask++){
  const attempts=completeAttempts(), first=attempts[0]!
  if(mask&1)first.workflow='failed'
  if(mask&2)first.steps.pop()
@@ -13,6 +13,7 @@ for(let mask=0;mask<128;mask++){
  if(mask&16)first.signedRequests[1]!.id='first'
  if(mask&32)first.secretScan.status='failed'
  if(mask&64)first.signedRequests[0]!.requestedPayload+='00'
+ if(mask&128)first.signedRequests[0]!.signingType='missing'
  assert.equal(umamiVerdict(attempts,passedStats).status==='workflow-passed',mask===0,'counterexample mask '+mask)
  cases++
 }

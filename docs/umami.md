@@ -43,4 +43,14 @@ node formal/verify-umami.ts
 xvfb-run -a node scripts/verify-umami-cleanup.ts
 ```
 
-The bounded verifier executes the actual verdict over 128 evidence combinations and checks a deliberately weakened signature-validation mutant. It does not prove desktop, network or cleanup liveness. The cleanup control separately starts the real wallet, kills its worker, runs the ledger fallback and checks an injected ledger-write setup failure.
+The bounded verifier executes the actual verdict over 256 evidence combinations and checks a deliberately weakened signature-validation mutant. It does not prove desktop, network or cleanup liveness. The cleanup control separately starts the real wallet, kills its worker, runs the ledger fallback and checks an injected ledger-write setup failure.
+
+## Recorded diagnostic
+
+The local stable run at harness commit `734357b203d2473e96a1194be884d7c4892c5e7f` completed zero of three full workflows with zero retries. All attempts verified the first exact signature. Two reached eight of nine steps and failed while waiting for permission recovery after signing rejection. The third reached seven steps and failed during signing rejection. The wallet reported `No matching request found!` and an undefined `type` error. DApp health was clean; wallet health was degraded. Retired relay and RPC DNS failures and TzKT HTTP errors remain in the reports.
+
+That run used wallet Electron Chromium `130.0.6723.137` and consumer Chromium `156.0.8078.4`. Every attempt passed its literal evidence scan and owned cleanup. No profile or Umami process remained.
+
+Later changes preserve metadata for each response, scan the serialized measurement before attaching it and wire the checks into all consumer manifests. These reporting and check changes passed the local deterministic suite. They were not followed by another desktop batch because the host drive was nearly full. The diagnostic above is evidence for the recorded commit, not a claim that every later line ran against the wallet.
+
+The local source-lock provenance is available in [Umami's pinned source lock](https://github.com/trilitech/umami-v2/blob/771e1d34ac714899a0056079f5d0e764bce427ef/pnpm-lock.yaml).
