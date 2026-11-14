@@ -1,4 +1,4 @@
-import {test,expect,chromium,type Page,type Browser,type BrowserContext} from '@playwright/test'
+import {test,expect,chromium,type Page,type Browser,type BrowserContext,type Locator} from '@playwright/test'
 import {readFile,writeFile} from 'node:fs/promises'
 import {spawnSync} from 'node:child_process'
 import {randomBytes} from 'node:crypto'
@@ -72,9 +72,34 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
       if(code){expect(result.error?.code).toBe(code);expect(result.value).toBeUndefined()}
       return result
     }
+    // The dApp SDK rejects a third request within five seconds as "rate limit reached".
+    // It counts a request once pairing has finished, which is never later than its completion.
+    const requestCompletions:number[]=[]
+    async function paceRequest(){
+      const previous=requestCompletions.at(-2)
+      if(previous!==undefined)await app.waitForTimeout(Math.max(0,previous+6000-Date.now()))
+    }
+    // Wait for the wallet dialog, but stop as soon as the dApp reports that the request already ended.
+    async function walletShows(dialog:Locator,text:string){
+      const pending=sequence+1
+      let watching=true
+      const shown=expect(dialog).toContainText(text,{timeout:90000})
+      const ended=(async()=>{
+        while(watching){
+          const parsed=completion.safeParse(JSON.parse(await app.locator('#result').innerText()))
+          if(parsed.success&&parsed.data.sequence===pending&&parsed.data.status!=='pending'){
+            throw new Error('The dApp '+parsed.data.operation+' request ended as '+parsed.data.status+' before the wallet showed it: '+(parsed.data.error?.message??'no error'))
+          }
+          await app.waitForTimeout(250)
+        }
+      })()
+      try{await Promise.race([shown,ended])}
+      finally{watching=false;shown.catch(()=>{});ended.catch(()=>{})}
+    }
     async function permission(approve:boolean){
       await expect(wallet.page.getByRole('dialog')).toBeHidden()
       log.act('p2p-pairing')
+      await paceRequest()
       await app.locator('#permission').click()
       await expect(app.locator('#pairing-p2p')).toHaveAttribute('data-ready','true',{timeout:90000})
       const serialized=await app.locator('#pairing-p2p').innerText()
@@ -82,7 +107,7 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
       await wallet.pair(serialized)
       log.act('permission-popup')
       const dialog=wallet.page.getByRole('dialog')
-      await expect(dialog).toContainText('Permission Request',{timeout:90000})
+      await walletShows(dialog,'Permission Request')
       await expect(dialog).toContainText('Umami lifecycle test')
       if(approve){
         await dialog.getByRole('textbox',{name:'address',exact:true}).fill(fixture.address)
@@ -90,6 +115,7 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
         await dialog.getByRole('button',{name:'Allow',exact:true}).click()
       }else await dialog.getByRole('button',{name:'Close',exact:true}).click()
       const result=await completed('permission',approve?'passed':'rejected',approve?undefined:'NOT_GRANTED_ERROR')
+      requestCompletions.push(Date.now())
       await expect(dialog).toBeHidden()
       return result
     }
@@ -112,8 +138,9 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     log.act('signing-popup')
     const dialog=wallet.page.getByRole('dialog')
     await expect(dialog).toBeHidden()
+    await paceRequest()
     await app.locator('#sign').click()
-    await expect(dialog).toContainText('Umami lifecycle test/dApp Pairing Request',{timeout:90000})
+    await walletShows(dialog,'Umami lifecycle test/dApp Pairing Request')
     await writeFile(info.outputPath('signing-ui.txt'),await dialog.ariaSnapshot())
     await pauseSensitiveCapture()
     log.act('signing-unlock')
@@ -124,6 +151,7 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     } catch { throw new Error('Umami signing unlock failed; capture was disabled') }
     await resumeCapture()
     const signed=z.object({requestedPayload:z.string(),response:z.object({id:z.string(),signature:z.string(),signingType:z.unknown().optional()})}).parse((await completed('sign','passed')).value)
+    requestCompletions.push(Date.now())
     expect(signed.requestedPayload).toBe(fixture.payload)
     expect(verifySignature(fixture.payload,fixture.publicKey,signed.response.signature)).toBe(true)
     expect(verifySignature(fixture.payload.slice(0,-2)+'00',fixture.publicKey,signed.response.signature)).toBe(false)
@@ -149,9 +177,11 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     steps.push('permission recovery after disconnect; exact independent identity')
     log.enter('signing-rejection')
     const dialog=wallet.page.getByRole('dialog')
-    await app.locator('#sign').click();await expect(dialog).toContainText('Umami lifecycle test/dApp Pairing Request',{timeout:90000})
+    await paceRequest()
+    await app.locator('#sign').click();await walletShows(dialog,'Umami lifecycle test/dApp Pairing Request')
     await dialog.getByRole('button',{name:'Close',exact:true}).click()
     await completed('sign','rejected','ABORTED_ERROR')
+    requestCompletions.push(Date.now())
     await expect(dialog).toBeHidden()
     await app.locator('#account').click()
     const postReject=(await completed('account','passed')).value;measurement.postRejectAccount=postReject
