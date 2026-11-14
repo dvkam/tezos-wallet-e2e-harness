@@ -4,20 +4,14 @@ import {spawnSync} from 'node:child_process'
 import {randomBytes} from 'node:crypto'
 import {z} from 'zod'
 import {launchUmami,onboardUmami} from './driver.ts'
+import {createAttemptLog,type Source} from './attempt-log.ts'
 import {deriveAddress,verifySignature} from '../../lib/oracle.ts'
 const fixture = z.object({mnemonic:z.string(),derivationPath:z.string(),address:z.string(),publicKey:z.string(),payload:z.string()}).parse(JSON.parse(await readFile('fixtures/account.json','utf8')))
 const completion = z.object({operation:z.string(),sequence:z.number(),status:z.enum(['pending','passed','rejected']),value:z.unknown().optional(),error:z.object({name:z.string(),message:z.string(),code:z.string().optional()}).optional()})
 const identity = {address:fixture.address,publicKey:fixture.publicKey,network:'mainnet'}
 test('Umami released desktop permission, signing and disconnect',async ({},info) => {
   const steps:string[]=[]
-  const pageErrors:string[]=[]
-  const consoleErrors:string[]=[]
-  const consumerPageErrors:string[]=[]
-  const consumerConsoleErrors:string[]=[]
-  const walletPageErrors:string[]=[]
-  const walletConsoleErrors:string[]=[]
-  const httpErrors:{source:'consumer'|'wallet';url:string;status:number}[]=[]
-  const failedRequests:{source:'consumer'|'wallet';url:string;error:string|null}[]=[]
+  const log=createAttemptLog()
   const externalEndpoints=new Set<string>()
   const measurement:Record<string,unknown>={attempt:info.repeatEachIndex,workflow:'failed',signedRequests:[],wallet:'umami',picker:'p2p',artifact:{name:'Umami',version:'2.3.8',sha256:'98c67e59a5f716cef4ea24b5039143fd72ad038dfc21028233210f5252fa5a5f'},steps}
   let ownedWallet:Awaited<ReturnType<typeof launchUmami>>|undefined
@@ -25,26 +19,27 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
   let consumerContext:BrowserContext|undefined
   let tracing=false
   let walletTracing=false
-  let stage='wallet-startup'
+  let failed=false
   const password='Umami-Test-1!'+randomBytes(16).toString('hex')
-  const observe=(page:Page,source:'consumer'|'wallet') => {
-    page.on('pageerror',error=>{pageErrors.push(ownedWallet?.redact(error.message)??error.message);(source==='consumer'?consumerPageErrors:walletPageErrors).push(ownedWallet?.redact(error.message)??error.message)})
-    page.on('console',message=>{if(message.type()==='error'){consoleErrors.push(ownedWallet?.redact(message.text())??message.text());(source==='consumer'?consumerConsoleErrors:walletConsoleErrors).push(ownedWallet?.redact(message.text())??message.text())}})
-    page.on('response',response=>{if(response.status()>=400){const url=new URL(response.url());httpErrors.push({source,url:url.origin+url.pathname,status:response.status()})}})
+  const observe=(page:Page,source:Source) => {
+    const redact=(text:string)=>ownedWallet?.redact(text)??text
+    page.on('pageerror',error=>{log.record(source,{kind:'pageerror',message:redact(error.message)})})
+    page.on('console',message=>{if(message.type()==='error')log.record(source,{kind:'console',message:redact(message.text())})})
+    page.on('response',response=>{if(response.status()>=400){const url=new URL(response.url());log.record(source,{kind:'http',url:url.origin+url.pathname,status:response.status()})}})
     page.on('requestfailed',request=>{
       const url=new URL(request.url())
-      failedRequests.push({source,url:url.origin+url.pathname,error:request.failure()?.errorText??null})
+      log.record(source,{kind:'network',url:url.origin+url.pathname,error:request.failure()?.errorText??null})
     })
     page.on('request',request=>{const url=new URL(request.url());if(url.protocol==='https:')externalEndpoints.add(url.origin+url.pathname)})
   }
   try {
     const wallet=await launchUmami(info.outputPath('wallet-process'));ownedWallet=wallet
-    stage='consumer-startup'
+    log.enter('consumer-startup')
     const browser=await chromium.launch({headless:false});ownedBrowser=browser
     const context=await browser.newContext();consumerContext=context
     const app=await context.newPage()
     observe(app,'consumer');observe(wallet.page,'wallet')
-    stage='onboarding'
+    log.enter('onboarding')
     measurement.walletRuntimeVersion=wallet.version
     measurement.consumerBrowserVersion=browser.version()
     measurement.artifact=wallet.artifact
@@ -79,13 +74,13 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     }
     async function permission(approve:boolean){
       await expect(wallet.page.getByRole('dialog')).toBeHidden()
-      stage='p2p-pairing'
+      log.act('p2p-pairing')
       await app.locator('#permission').click()
       await expect(app.locator('#pairing-p2p')).toHaveAttribute('data-ready','true',{timeout:90000})
       const serialized=await app.locator('#pairing-p2p').innerText()
       if(!serialized)throw new Error('Public P2P pairing payload is absent')
       await wallet.pair(serialized)
-      stage='permission-popup'
+      log.act('permission-popup')
       const dialog=wallet.page.getByRole('dialog')
       await expect(dialog).toContainText('Permission Request',{timeout:90000})
       await expect(dialog).toContainText('Umami lifecycle test')
@@ -98,26 +93,30 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
       await expect(dialog).toBeHidden()
       return result
     }
+    log.enter('permission-rejection')
     await permission(false)
     await app.locator('#account').click();expect((await completed('account','passed')).value).toBeNull()
     steps.push('permission rejected; account remains absent')
+    log.enter('permission-approval')
     const granted=(await permission(true)).value
     expect(granted).toEqual(identity)
     measurement.account=granted
     expect(deriveAddress(fixture.publicKey)).toBe(fixture.address)
     steps.push('permission recovery; exact independent identity')
+    log.enter('authorized-reload')
     await app.reload();await expect(app.locator('#result')).toHaveAttribute('data-ready','true');sequence=0
     await app.locator('#account').click();expect((await completed('account','passed')).value).toEqual(identity)
     steps.push('authorized account survives reload')
     const signedRequests:{id:string;signature:string;requestedPayload:string;signingType:unknown}[]=[]
     async function approveSigning() {
-    stage='signing-approval'
+    log.act('signing-popup')
     const dialog=wallet.page.getByRole('dialog')
     await expect(dialog).toBeHidden()
     await app.locator('#sign').click()
     await expect(dialog).toContainText('Umami lifecycle test/dApp Pairing Request',{timeout:90000})
     await writeFile(info.outputPath('signing-ui.txt'),await dialog.ariaSnapshot())
     await pauseSensitiveCapture()
+    log.act('signing-unlock')
     try {
       await dialog.getByTestId('password').fill(password)
       await dialog.getByRole('button',{name:'Sign',exact:true}).click()
@@ -136,17 +135,19 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     await expect(dialog).toBeHidden()
     return signed
     }
+    log.enter('signing-approval')
     await approveSigning()
     steps.push('signature verified; changed-payload negative control rejected')
-    stage='disconnect'
+    log.enter('disconnect')
     await app.locator('#disconnect').click();expect((await completed('disconnect','passed')).value).toBeNull()
     await app.reload();await expect(app.locator('#result')).toHaveAttribute('data-ready','true');sequence=0
     await app.locator('#account').click();expect((await completed('account','passed')).value).toBeNull()
     measurement.disconnectContract={status:'passed',accountAfterReload:null}
     steps.push('disconnect clears account across reload')
+    log.enter('recovery-after-disconnect')
     expect((await permission(true)).value).toEqual(identity)
     steps.push('permission recovery after disconnect; exact independent identity')
-    stage='signing-rejection'
+    log.enter('signing-rejection')
     const dialog=wallet.page.getByRole('dialog')
     await app.locator('#sign').click();await expect(dialog).toContainText('Umami lifecycle test/dApp Pairing Request',{timeout:90000})
     await dialog.getByRole('button',{name:'Close',exact:true}).click()
@@ -157,31 +158,25 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     expect(postReject).toBeNull()
     measurement.signingRejectionContract={status:'passed',expectedAccount:null,observedAccount:postReject,code:'ABORTED_ERROR',walletPolicy:'v2.3.8 removes its Beacon peer when closing the signing dialog'}
     steps.push('signing rejected; wallet revokes connection as declared')
-    stage='recovery-after-signing-rejection'
+    log.enter('recovery-after-signing-rejection')
     expect((await permission(true)).value).toEqual(identity)
     await approveSigning()
     measurement.recoveryAfterSigningRejection={status:'passed',account:identity,secondSignatureVerified:true}
     steps.push('permission recovery after signing rejection; exact independent identity and signature')
-    expect(consumerPageErrors,'The consumer must have no uncaught errors').toEqual([])
-    expect(consumerConsoleErrors,'The consumer must have no console errors').toEqual([])
-    expect(walletPageErrors.filter(error=>/No matching request found|Cannot read properties of undefined \(reading 'type'\)/.test(error)),'Wallet request correlation errors are fatal to this workflow').toEqual([])
+    expect(log.health('consumer').findings.filter(finding=>finding.kind==='pageerror'||finding.kind==='console'),'The consumer must have no uncaught or console errors').toEqual([])
+    expect(log.health('wallet').findings.filter(finding=>finding.kind==='pageerror'&&/No matching request found|Cannot read properties of undefined \(reading 'type'\)/.test(finding.message)),'Wallet request correlation errors are fatal to this workflow').toEqual([])
     measurement.workflow='passed'
     if(!captureSafe)throw new Error('Capture remains disabled')
     await app.screenshot({path:info.outputPath('consumer.png')})
     await wallet.page.screenshot({path:info.outputPath('wallet.png')})
-    stage='completed'
+    log.enter('completed')
+  }catch(error:unknown){
+    // Playwright sets info.status only after this function returns.
+    failed=true
+    throw error
   }finally{
-    const healthSide=(source:'consumer'|'wallet')=>{
-      const findings=[
-        ...(source==='consumer'?consumerPageErrors:walletPageErrors).map(message=>({kind:'pageerror',message})),
-        ...(source==='consumer'?consumerConsoleErrors:walletConsoleErrors).map(message=>({kind:'console',message})),
-        ...httpErrors.filter(error=>error.source===source).map(error=>({kind:'http',...error})),
-        ...failedRequests.filter(error=>error.source===source&&!/ERR_ABORTED|cancel/i.test(error.error??'')).map(error=>({kind:'network',...error}))
-      ]
-      return {status:findings.length?(source==='consumer'?'failed':'degraded'):'clean',findings,canceledRequests:failedRequests.filter(error=>error.source===source&&/ERR_ABORTED|cancel/i.test(error.error??''))}
-    }
     const cleanupErrors:string[]=[]
-    if(info.status!==info.expectedStatus&&tracing&&walletTracing){
+    if(failed&&tracing&&walletTracing){
       try{await ownedWallet?.page.screenshot({path:info.outputPath('wallet-failure.png')})}catch{}
       try{await consumerContext?.pages()[0]?.screenshot({path:info.outputPath('consumer-failure.png')})}catch{}
     }
@@ -190,7 +185,8 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     if(walletTracing&&ownedWallet)await cleanup(()=>ownedWallet!.context.tracing.stop({path:info.outputPath('wallet-trace-final.zip')}))
     await cleanup(async()=>ownedBrowser?.close())
     await cleanup(async()=>ownedWallet?.close())
-    measurement.stage=stage;measurement.health=ownedWallet?{scope:'after-CDP-attachment-including-onboarding',dapp:healthSide('consumer'),wallet:healthSide('wallet')}:null
+    Object.assign(measurement,log.position())
+    measurement.health=ownedWallet?{scope:'after-CDP-attachment-including-onboarding',dapp:log.health('consumer'),wallet:log.health('wallet')}:null
     measurement.externalEndpoints=[...externalEndpoints].sort()
     await writeFile(info.outputPath('measurement.json'),ownedWallet?.redact(JSON.stringify(measurement,null,2))??JSON.stringify(measurement,null,2))
     const scan=spawnSync('python3',['scripts/umami-evidence-scan.py',info.outputDir],{input:JSON.stringify([fixture.mnemonic,password]),encoding:'utf8',timeout:30_000})
