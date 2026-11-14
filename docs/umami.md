@@ -25,7 +25,7 @@ Missing signing metadata stays a separate contract finding. It does not invalida
 
 ## Evidence and limits
 
-Read `result.json`, `installed-graph.json` and each attempt's `measurement.json`. A command succeeds only when all attempts complete and every reported contract and health check is clean. A partial workflow exits nonzero. Do not use this diagnostic lane as a release gate until the recovery failures are understood.
+Read `result.json`, `installed-graph.json` and each attempt's `measurement.json`. Each health finding records `atMs`, the milliseconds since the attempt started, plus the workflow `stage` and the wallet `action` in progress. The measurement's own `stage` and `action` give the position where the attempt ended. A failed attempt also keeps `wallet-failure.png` and `consumer-failure.png`, unless it failed inside a password-entry interval. A command succeeds only when all attempts complete and every reported contract and health check is clean. A partial workflow exits nonzero. Do not use this diagnostic lane as a release gate until the recovery failures are understood.
 
 Open any retained trace with `npx playwright show-trace /absolute/path/to/wallet-trace-0.zip`. Trace segments and screenshots exclude onboarding and every password-entry interval. A failure during an unlock leaves capture disabled. Process and measurement logs redact the generated password and public mnemonic. A final scan checks literal text and ZIP contents; it does not prove that images contain no secret. Review artifacts locally before sharing them.
 
@@ -50,6 +50,16 @@ The bounded verifier executes the actual verdict over 256 evidence combinations 
 The local stable run at harness commit `734357b203d2473e96a1194be884d7c4892c5e7f` completed zero of three full workflows with zero retries. All attempts verified the first exact signature. Two reached eight of nine steps and failed while waiting for permission recovery after signing rejection. The third reached seven steps and failed during signing rejection. The wallet reported `No matching request found!` and an undefined `type` error. DApp health was clean; wallet health was degraded. Retired relay and RPC DNS failures and TzKT HTTP errors remain in the reports.
 
 That run used wallet Electron Chromium `130.0.6723.137` and consumer Chromium `156.0.8078.4`. Every attempt passed its literal evidence scan and owned cleanup. No profile or Umami process remained.
+
+A second stable run at harness commit `e7e7a75904d2f10850cda594b35fdd20b3d338f3` also completed zero of three workflows with zero retries. All three attempts reached eight of nine steps and failed at stage `recovery-after-signing-rejection`, action `permission-popup`. The dApp published a new pairing, the deep link was handed over, and no permission dialog appeared within 90 seconds. Each attempt kept both failure screenshots.
+
+The timed findings place the wallet's request errors before the failing stage. `No matching request found!` occurred once during the first permission approval and once during re-pairing after disconnect. The undefined `type` error occurred during disconnect. All three belong to stages that completed, and none occurred during signing rejection or the failed recovery. They are therefore not sufficient to explain the stall.
+
+The failure screenshot of that run shows the cause. The dApp reported `rate limit reached`. The Beacon dApp SDK rejects a third request within five seconds, and it checks this after pairing has finished. The driver sent re-pairing, signing and re-pairing inside that window. The last permission request never left the dApp, and the driver waited 90 seconds for a wallet dialog. The first run has no screenshot, so the same cause is likely there and not shown.
+
+The driver now spaces requests below that limit and stops waiting once the dApp reports that a request ended. A third stable run at harness commit `57ef4730be92faafef52f76c8129cd5649170f04` completed all nine steps in each of three attempts, in about 40 seconds each, with both signatures verified and `micheline` signing metadata. The command still exits nonzero. Each attempt fails the final check that wallet request errors are fatal: `No matching request found!` after every permission approval and the undefined `type` error on disconnect.
+
+The first error has a source-level explanation at the pinned Umami commit. `PermissionRequestModal` closes the dialog with `.finally(onClose)` after a grant. The `onClose` from `useHandleBeaconMessage` then answers the same request with `NOT_GRANTED_ERROR`. Beacon has already removed the request and throws. The throw also skips the `removePeer` call that follows it.
 
 Later changes preserve metadata for each response, scan the serialized measurement before attaching it and wire the checks into all consumer manifests. These reporting and check changes passed the local deterministic suite. They were not followed by another desktop batch because the host drive was nearly full. The diagnostic above is evidence for the recorded commit, not a claim that every later line ran against the wallet.
 
