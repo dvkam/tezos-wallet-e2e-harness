@@ -3,19 +3,14 @@ import { promisify } from 'node:util'
 import { z } from 'zod'
 import { mkdtemp, mkdir, writeFile, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
-import { createServer } from 'node:net'
 import { chromium, expect, type Browser, type Page } from '@playwright/test'
 import { umamiArtifactSchema } from '../../scripts/umami-verdict.ts'
 import { ledgerSchema, processIdentity, stopOwnedUmami } from '../../scripts/umami-cleanup.ts'
 
-async function freePort() {
-  const server = createServer()
-  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Could not reserve an Umami CDP port')
-  const port = address.port
-  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
-  return port
+// Chromium picks the port and announces it, so no other process can take a reserved one first.
+export function devtoolsEndpoint(stderr: string) {
+  const port = /^DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//m.exec(stderr)?.[1]
+  return port ? 'http://127.0.0.1:' + port : undefined
 }
 export async function launchUmami(outputDirectory: string) {
   const artifactRoot = path.resolve(process.env.WALLET_ARTIFACT_ROOT ?? '.artifacts')
@@ -29,7 +24,6 @@ export async function launchUmami(outputDirectory: string) {
   await mkdir(outputDirectory, { recursive: true })
   const profile = await mkdtemp(path.join(profileRoot, 'umami-'))
   const binary = path.join(artifactRoot, 'umami/unpacked/opt/Umami/@umamidesktop')
-  const port = await freePort()
   const environment = { ...process.env, XDG_CONFIG_HOME: path.join(profile, 'config'), XDG_DATA_HOME: path.join(profile, 'data'), XDG_CACHE_HOME: path.join(profile, 'cache') }
   const ledger: z.infer<typeof ledgerSchema> = { binary, profile, processes: [] }
   const secrets: string[] = []
@@ -90,17 +84,23 @@ export async function launchUmami(outputDirectory: string) {
   }
   let spawnError: Error | undefined
   try {
-    const child = spawn(binary, ['--user-data-dir=' + path.join(profile, 'browser'), '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=' + port], { env: environment, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(binary, ['--user-data-dir=' + path.join(profile, 'browser'), '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0'], { env: environment, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     child.once('error', error => { spawnError = error })
     child.stdout?.on('data', data => { logs += redact(String(data)) })
-    child.stderr?.on('data', data => { logs += redact(String(data)) })
+    let startup = ''
+    let endpoint: string | undefined
+    child.stderr?.on('data', data => {
+      logs += redact(String(data))
+      if (!endpoint) { startup += String(data); endpoint = devtoolsEndpoint(startup) }
+    })
     await own(child)
     await expect.poll(async () => {
       if (spawnError) throw spawnError
       if (child.exitCode !== null) throw new Error('Umami exited before CDP startup: ' + child.exitCode)
-      try { return (await fetch('http://127.0.0.1:' + port + '/json/version', { signal: AbortSignal.timeout(1000) })).ok } catch { return false }
+      return endpoint !== undefined
     }, { timeout: 20_000 }).toBe(true)
-    browser = await chromium.connectOverCDP('http://127.0.0.1:' + port)
+    if (!endpoint) throw new Error('Umami did not announce its CDP endpoint')
+    browser = await chromium.connectOverCDP(endpoint)
     await expect.poll(() => browser?.contexts()[0]?.pages().length ?? 0, { timeout: 20_000 }).toBeGreaterThan(0)
     const context = browser.contexts()[0]
     const page = context?.pages()[0]
