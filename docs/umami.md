@@ -61,6 +61,16 @@ The driver now spaces requests below that limit and stops waiting once the dApp 
 
 The first error has a source-level explanation at the pinned Umami commit. `PermissionRequestModal` closes the dialog with `.finally(onClose)` after a grant. The `onClose` from `useHandleBeaconMessage` then answers the same request with `NOT_GRANTED_ERROR`. Beacon has already removed the request and throws. The throw also skips the `removePeer` call that follows it.
 
+The second error comes from the Beacon wallet client bundled in Umami. `@airgap/beacon-wallet` 4.5.0 treats every message labelled version 3 as an envelope and reads `message.message.type`. The dApp sends its disconnect as a flat message labelled with the peer's version, `'3'`, and with no `message` field. The read throws and the wallet skips the disconnect.
+
+Both errors now have upstream reports:
+
+- [trilitech/umami-v2#2534](https://github.com/trilitech/umami-v2/pull/2534) closes the permission modal with `goBack` instead of `onClose`. It is a draft.
+- [ecadlabs/beacon-sdk-taquito-patches#234](https://github.com/ecadlabs/beacon-sdk-taquito-patches/pull/234) labels the flat disconnect `'2'`, which the airgap wallet reads through its flat branch. The maintainers merged it on 2026-11-16, after `4.9.0-ecad-beta.3`, so no pinned lane contains it yet. Against Kukai, which bundles airgap Beacon 4.8.0, builds of that branch removed the wallet's disconnect error in three of three attempts. The harness has not run it against Umami.
+- [trilitech/octez.connect#65](https://github.com/trilitech/octez.connect/issues/65) reports the same read in the octez.connect wallet client.
+
+Until a lane pins a dApp release with that change, the Umami lane keeps reporting the disconnect error.
+
 Later changes preserve metadata for each response, scan the serialized measurement before attaching it and wire the checks into all consumer manifests. These reporting and check changes passed the local deterministic suite. They were not followed by another desktop batch because the host drive was nearly full. The diagnostic above is evidence for the recorded commit, not a claim that every later line ran against the wallet.
 
 The local source-lock provenance is available in [Umami's pinned source lock](https://github.com/trilitech/umami-v2/blob/771e1d34ac714899a0056079f5d0e764bce427ef/pnpm-lock.yaml).
