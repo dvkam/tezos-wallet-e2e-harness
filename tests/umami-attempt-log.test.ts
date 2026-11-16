@@ -2,19 +2,18 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createAttemptLog } from '../e2e/umami/attempt-log.ts'
 
-test('a finding keeps its workflow phase when a shared wallet action runs inside it', () => {
+test('a finding keeps its workflow phase and the wallet action that was running', async () => {
   let clock = 1000
   const log = createAttemptLog(() => clock)
   log.enter('signing-rejection')
   clock = 1250
   log.record('wallet', { kind: 'pageerror', message: 'No matching request found!' })
   log.enter('recovery-after-signing-rejection')
-  log.act('p2p-pairing')
-  log.act('permission-popup')
-  clock = 4000
-  log.record('wallet', { kind: 'http', url: 'https://api.example/v1', status: 400 })
+  await log.during('permission-popup', async () => {
+    clock = 4000
+    log.record('wallet', { kind: 'http', url: 'https://api.example/v1', status: 400 })
+  })
 
-  assert.deepEqual(log.position(), { stage: 'recovery-after-signing-rejection', action: 'permission-popup' })
   assert.deepEqual(log.health('wallet'), {
     status: 'degraded',
     findings: [
@@ -25,6 +24,25 @@ test('a finding keeps its workflow phase when a shared wallet action runs inside
   })
   log.enter('completed')
   assert.deepEqual(log.position(), { stage: 'completed', action: null })
+})
+
+test('a finding after a wallet action has finished is not attributed to it', async () => {
+  const log = createAttemptLog(() => 0)
+  log.enter('permission-rejection')
+  const result = await log.during('permission-popup', async () => 'rejected')
+  log.record('wallet', { kind: 'console', message: 'late error' })
+
+  assert.equal(result, 'rejected')
+  assert.deepEqual(log.position(), { stage: 'permission-rejection', action: null })
+  assert.equal(log.health('wallet').findings[0]?.action, null)
+})
+
+test('a wallet action that fails stays the position where the attempt ended', async () => {
+  const log = createAttemptLog(() => 0)
+  log.enter('signing-approval')
+  await assert.rejects(log.during('signing-unlock', async () => { throw new Error('unlock failed') }), /unlock failed/)
+
+  assert.deepEqual(log.position(), { stage: 'signing-approval', action: 'signing-unlock' })
 })
 
 test('a canceled navigation request stays visible without degrading either side', () => {

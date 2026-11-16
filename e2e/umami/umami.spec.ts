@@ -5,6 +5,7 @@ import {randomBytes} from 'node:crypto'
 import {z} from 'zod'
 import {launchUmami,onboardUmami} from './driver.ts'
 import {createAttemptLog,type Source} from './attempt-log.ts'
+import {createRequestPacer} from './pacing.ts'
 import {deriveAddress,verifySignature} from '../../lib/oracle.ts'
 const fixture = z.object({mnemonic:z.string(),derivationPath:z.string(),address:z.string(),publicKey:z.string(),payload:z.string()}).parse(JSON.parse(await readFile('fixtures/account.json','utf8')))
 const completion = z.object({operation:z.string(),sequence:z.number(),status:z.enum(['pending','passed','rejected']),value:z.unknown().optional(),error:z.object({name:z.string(),message:z.string(),code:z.string().optional()}).optional()})
@@ -62,33 +63,39 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     await app.goto(new URL('/?picker=p2p&wallet=umami',process.env.WALLET_APP_ORIGIN).href)
     await expect(app.locator('#result')).toHaveAttribute('data-ready','true')
     let sequence=0
+    // Returns null while #result is not a valid completion, for example during a reload.
+    async function readResult(){
+      try{const parsed=completion.safeParse(JSON.parse(await app.locator('#result').innerText()));return parsed.success?parsed.data:null}
+      catch{return null}
+    }
     async function completed(operation:string,status:'passed'|'rejected',code?:string){
       const expected=++sequence
       await expect.poll(async()=>{
-        const parsed=completion.safeParse(JSON.parse(await app.locator('#result').innerText()))
-        return parsed.success?{operation:parsed.data.operation,sequence:parsed.data.sequence,status:parsed.data.status}:null
+        const result=await readResult()
+        return result?{operation:result.operation,sequence:result.sequence,status:result.status}:null
       },{timeout:45000}).toEqual({operation,sequence:expected,status})
       const result=completion.parse(JSON.parse(await app.locator('#result').innerText()))
       if(code){expect(result.error?.code).toBe(code);expect(result.value).toBeUndefined()}
       return result
     }
-    // The dApp SDK rejects a third request within five seconds as "rate limit reached".
-    // It counts a request once pairing has finished, which is never later than its completion.
-    const requestCompletions:number[]=[]
-    async function paceRequest(){
-      const previous=requestCompletions.at(-2)
-      if(previous!==undefined)await app.waitForTimeout(Math.max(0,previous+6000-Date.now()))
+    // Every dApp request that goes through the SDK rate limit runs inside paced(), from click to completion.
+    const pacer=createRequestPacer()
+    async function paced<T>(request:()=>Promise<T>){
+      await app.waitForTimeout(pacer.waitMs())
+      const result=await request()
+      pacer.completed()
+      return result
     }
     // Wait for the wallet dialog, but stop as soon as the dApp reports that the request already ended.
-    async function walletShows(dialog:Locator,text:string){
+    async function awaitWalletDialog(dialog:Locator,text:string){
       const pending=sequence+1
       let watching=true
       const shown=expect(dialog).toContainText(text,{timeout:90000})
       const ended=(async()=>{
         while(watching){
-          const parsed=completion.safeParse(JSON.parse(await app.locator('#result').innerText()))
-          if(parsed.success&&parsed.data.sequence===pending&&parsed.data.status!=='pending'){
-            throw new Error('The dApp '+parsed.data.operation+' request ended as '+parsed.data.status+' before the wallet showed it: '+(parsed.data.error?.message??'no error'))
+          const result=await readResult()
+          if(result&&result.sequence===pending&&result.status!=='pending'){
+            throw new Error('The dApp '+result.operation+' request ended as '+result.status+' before the wallet showed it: '+(result.error?.message??'no error'))
           }
           await app.waitForTimeout(250)
         }
@@ -97,27 +104,29 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
       finally{watching=false;shown.catch(()=>{});ended.catch(()=>{})}
     }
     async function permission(approve:boolean){
-      await expect(wallet.page.getByRole('dialog')).toBeHidden()
-      log.act('p2p-pairing')
-      await paceRequest()
-      await app.locator('#permission').click()
-      await expect(app.locator('#pairing-p2p')).toHaveAttribute('data-ready','true',{timeout:90000})
-      const serialized=await app.locator('#pairing-p2p').innerText()
-      if(!serialized)throw new Error('Public P2P pairing payload is absent')
-      await wallet.pair(serialized)
-      log.act('permission-popup')
       const dialog=wallet.page.getByRole('dialog')
-      await walletShows(dialog,'Permission Request')
-      await expect(dialog).toContainText('Umami lifecycle test')
-      if(approve){
-        await dialog.getByRole('textbox',{name:'address',exact:true}).fill(fixture.address)
-        await expect(dialog.getByTestId('selected-address-tile-'+fixture.address)).toBeVisible()
-        await dialog.getByRole('button',{name:'Allow',exact:true}).click()
-      }else await dialog.getByRole('button',{name:'Close',exact:true}).click()
-      const result=await completed('permission',approve?'passed':'rejected',approve?undefined:'NOT_GRANTED_ERROR')
-      requestCompletions.push(Date.now())
       await expect(dialog).toBeHidden()
-      return result
+      return paced(async()=>{
+        await log.during('p2p-pairing',async()=>{
+          await app.locator('#permission').click()
+          await expect(app.locator('#pairing-p2p')).toHaveAttribute('data-ready','true',{timeout:90000})
+          const serialized=await app.locator('#pairing-p2p').innerText()
+          if(!serialized)throw new Error('Public P2P pairing payload is absent')
+          await wallet.pair(serialized)
+        })
+        return log.during('permission-popup',async()=>{
+          await awaitWalletDialog(dialog,'Permission Request')
+          await expect(dialog).toContainText('Umami lifecycle test')
+          if(approve){
+            await dialog.getByRole('textbox',{name:'address',exact:true}).fill(fixture.address)
+            await expect(dialog.getByTestId('selected-address-tile-'+fixture.address)).toBeVisible()
+            await dialog.getByRole('button',{name:'Allow',exact:true}).click()
+          }else await dialog.getByRole('button',{name:'Close',exact:true}).click()
+          const result=await completed('permission',approve?'passed':'rejected',approve?undefined:'NOT_GRANTED_ERROR')
+          await expect(dialog).toBeHidden()
+          return result
+        })
+      })
     }
     log.enter('permission-rejection')
     await permission(false)
@@ -135,23 +144,25 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     steps.push('authorized account survives reload')
     const signedRequests:{id:string;signature:string;requestedPayload:string;signingType:unknown}[]=[]
     async function approveSigning() {
-    log.act('signing-popup')
     const dialog=wallet.page.getByRole('dialog')
     await expect(dialog).toBeHidden()
-    await paceRequest()
-    await app.locator('#sign').click()
-    await walletShows(dialog,'Umami lifecycle test/dApp Pairing Request')
-    await writeFile(info.outputPath('signing-ui.txt'),await dialog.ariaSnapshot())
-    await pauseSensitiveCapture()
-    log.act('signing-unlock')
-    try {
-      await dialog.getByTestId('password').fill(password)
-      await dialog.getByRole('button',{name:'Sign',exact:true}).click()
-      await expect(dialog).toBeHidden()
-    } catch { throw new Error('Umami signing unlock failed; capture was disabled') }
-    await resumeCapture()
-    const signed=z.object({requestedPayload:z.string(),response:z.object({id:z.string(),signature:z.string(),signingType:z.unknown().optional()})}).parse((await completed('sign','passed')).value)
-    requestCompletions.push(Date.now())
+    const signed=await paced(async()=>{
+      await log.during('signing-popup',async()=>{
+        await app.locator('#sign').click()
+        await awaitWalletDialog(dialog,'Umami lifecycle test/dApp Pairing Request')
+        await writeFile(info.outputPath('signing-ui.txt'),await dialog.ariaSnapshot())
+      })
+      await pauseSensitiveCapture()
+      await log.during('signing-unlock',async()=>{
+        try {
+          await dialog.getByTestId('password').fill(password)
+          await dialog.getByRole('button',{name:'Sign',exact:true}).click()
+          await expect(dialog).toBeHidden()
+        } catch { throw new Error('Umami signing unlock failed; capture was disabled') }
+      })
+      await resumeCapture()
+      return z.object({requestedPayload:z.string(),response:z.object({id:z.string(),signature:z.string(),signingType:z.unknown().optional()})}).parse((await completed('sign','passed')).value)
+    })
     expect(signed.requestedPayload).toBe(fixture.payload)
     expect(verifySignature(fixture.payload,fixture.publicKey,signed.response.signature)).toBe(true)
     expect(verifySignature(fixture.payload.slice(0,-2)+'00',fixture.publicKey,signed.response.signature)).toBe(false)
@@ -177,12 +188,12 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     steps.push('permission recovery after disconnect; exact independent identity')
     log.enter('signing-rejection')
     const dialog=wallet.page.getByRole('dialog')
-    await paceRequest()
-    await app.locator('#sign').click();await walletShows(dialog,'Umami lifecycle test/dApp Pairing Request')
-    await dialog.getByRole('button',{name:'Close',exact:true}).click()
-    await completed('sign','rejected','ABORTED_ERROR')
-    requestCompletions.push(Date.now())
-    await expect(dialog).toBeHidden()
+    await paced(()=>log.during('signing-popup',async()=>{
+      await app.locator('#sign').click();await awaitWalletDialog(dialog,'Umami lifecycle test/dApp Pairing Request')
+      await dialog.getByRole('button',{name:'Close',exact:true}).click()
+      await completed('sign','rejected','ABORTED_ERROR')
+      await expect(dialog).toBeHidden()
+    }))
     await app.locator('#account').click()
     const postReject=(await completed('account','passed')).value;measurement.postRejectAccount=postReject
     expect(postReject).toBeNull()
@@ -193,15 +204,16 @@ test('Umami released desktop permission, signing and disconnect',async ({},info)
     await approveSigning()
     measurement.recoveryAfterSigningRejection={status:'passed',account:identity,secondSignatureVerified:true}
     steps.push('permission recovery after signing rejection; exact independent identity and signature')
+    log.enter('final-checks')
     expect(log.health('consumer').findings.filter(finding=>finding.kind==='pageerror'||finding.kind==='console'),'The consumer must have no uncaught or console errors').toEqual([])
     expect(log.health('wallet').findings.filter(finding=>finding.kind==='pageerror'&&/No matching request found|Cannot read properties of undefined \(reading 'type'\)/.test(finding.message)),'Wallet request correlation errors are fatal to this workflow').toEqual([])
-    measurement.workflow='passed'
     if(!captureSafe)throw new Error('Capture remains disabled')
     await app.screenshot({path:info.outputPath('consumer.png')})
     await wallet.page.screenshot({path:info.outputPath('wallet.png')})
     log.enter('completed')
+    measurement.workflow='passed'
   }catch(error:unknown){
-    // Playwright sets info.status only after this function returns.
+    // For a thrown error, Playwright sets info.status only after this function returns, so record the failure here.
     failed=true
     throw error
   }finally{

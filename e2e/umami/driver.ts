@@ -98,7 +98,7 @@ export async function launchUmami(outputDirectory: string) {
       if (spawnError) throw spawnError
       if (child.exitCode !== null) throw new Error('Umami exited before CDP startup: ' + child.exitCode)
       return endpoint !== undefined
-    }, { timeout: 20_000 }).toBe(true)
+    }, { timeout: 20_000, message: 'Umami did not announce its CDP endpoint' }).toBe(true)
     if (!endpoint) throw new Error('Umami did not announce its CDP endpoint')
     browser = await chromium.connectOverCDP(endpoint)
     await expect.poll(() => browser?.contexts()[0]?.pages().length ?? 0, { timeout: 20_000 }).toBeGreaterThan(0)
